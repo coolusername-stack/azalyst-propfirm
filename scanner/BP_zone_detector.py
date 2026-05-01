@@ -263,16 +263,9 @@ class ZoneDetector:
             if n_candles > self.base_max:
                 return best_end if best_end is not None else start
 
-            # All base candles must be indecisive (body <= 50% of range)
-            all_indecisive = True
-            for _, row in base_slice.iterrows():
-                if row['range'] > 0:
-                    body_pct = row['body'] / row['range']
-                    if body_pct > 0.50:
-                        all_indecisive = False
-                        break
-
-            if all_indecisive:
+            # Vectorized: All base candles must be indecisive (body <= 50% of range)
+            body_ratios = base_slice['body'] / base_slice['range'].replace(0, np.nan)
+            if (body_ratios <= 0.50).all():
                 best_end = end
 
         return best_end
@@ -428,20 +421,15 @@ class ZoneDetector:
         q5_failed_gate = (with_trend is False and profit_score == 0.0)
 
         # Q6: Arrival -- same trend-context rule. Skipped on trend trades.
+        return_slice = df.iloc[zone['leg_out_end']:]
         if zone_type == 'demand':
-            return_slice = df.iloc[zone['leg_out_end']:]
-            bars_to_return = 0
-            for _, row in return_slice.iterrows():
-                bars_to_return += 1
-                if row['low'] <= proximal:
-                    break
+            # Find first bar where low <= proximal
+            below_proximal = return_slice['low'] <= proximal
+            bars_to_return = int(below_proximal.idxmax() - return_slice.index[0]) if below_proximal.any() else len(return_slice)
         else:
-            return_slice = df.iloc[zone['leg_out_end']:]
-            bars_to_return = 0
-            for _, row in return_slice.iterrows():
-                bars_to_return += 1
-                if row['high'] >= proximal:
-                    break
+            # Find first bar where high >= proximal
+            above_proximal = return_slice['high'] >= proximal
+            bars_to_return = int(above_proximal.idxmax() - return_slice.index[0]) if above_proximal.any() else len(return_slice)
 
         if with_trend is True:
             arrival_score = 10.0  # Skip Q6 on trend trades
@@ -548,15 +536,13 @@ class ZoneDetector:
             proximal = min(base_slice[['open', 'close']].min(axis=1))
             distal = max(base_slice['high'].max(), leg_out_slice['high'].max())
 
-        retests = 0
         after_origin = df.iloc[origin_idx + 1:]
-        for _, row in after_origin.iterrows():
-            if zone_type == 'demand':
-                if row['low'] <= proximal and row['low'] >= distal:
-                    retests += 1
-            else:
-                if row['high'] >= proximal and row['high'] <= distal:
-                    retests += 1
+        if zone_type == 'demand':
+            in_zone = (after_origin['low'] <= proximal) & (after_origin['low'] >= distal)
+            retests = int(in_zone.sum())
+        else:
+            in_zone = (after_origin['high'] >= proximal) & (after_origin['high'] <= distal)
+            retests = int(in_zone.sum())
         return retests
 
     def _count_retests_split(
@@ -583,38 +569,41 @@ class ZoneDetector:
         leg_out_slice = df.iloc[zone['leg_out_start']:zone['leg_out_end'] + 1]
 
         if zone_type == 'demand':
-            preferred = max(base_slice[['open', 'close']].max(axis=1))   # body-extreme high
-            wider     = min(base_slice['low'].min(), leg_out_slice['low'].min())  # wick distal
+            preferred = float(max(base_slice[['open', 'close']].max(axis=1)))   # body-extreme high
+            wider     = float(min(base_slice['low'].min(), leg_out_slice['low'].min()))  # wick distal
         else:
-            preferred = min(base_slice[['open', 'close']].min(axis=1))
-            wider     = max(base_slice['high'].max(), leg_out_slice['high'].max())
+            preferred = float(min(base_slice[['open', 'close']].min(axis=1)))
+            wider     = float(max(base_slice['high'].max(), leg_out_slice['high'].max()))
 
-        wider_hits = 0
-        preferred_hits = 0
-        after = df.iloc[origin_idx + 1:]
-        for _, row in after.iterrows():
-            if zone_type == 'demand':
-                # Did price enter the wider area at all?
-                if row['low'] <= preferred and row['low'] >= wider:
-                    # If wick crossed below preferred (i.e. into body-extreme zone)?
-                    if row['low'] < preferred:
-                        # Crossing past proximal line: preferred-zone retest
-                        # (a deeper hit beyond the body-extreme line)
-                        if row['close'] < preferred or row['low'] < (preferred - 0.25 * abs(preferred - wider)):
-                            preferred_hits += 1
-                        else:
-                            wider_hits += 1
-                    else:
-                        wider_hits += 1
-            else:
-                if row['high'] >= preferred and row['high'] <= wider:
-                    if row['high'] > preferred:
-                        if row['close'] > preferred or row['high'] > (preferred + 0.25 * abs(preferred - wider)):
-                            preferred_hits += 1
-                        else:
-                            wider_hits += 1
-                    else:
-                        wider_hits += 1
+        after = df.iloc[origin_idx + 1:].copy()
+        
+        if zone_type == 'demand':
+            # Vectorized: check which bars have low in [wider, preferred] range
+            in_wider = (after['low'] <= preferred) & (after['low'] >= wider)
+            below_preferred = after['low'] < preferred
+            deep_close = after['close'] < preferred
+            deep_low = after['low'] < (preferred - 0.25 * abs(preferred - wider))
+            
+            # Preferred hits: below preferred AND (deep close OR deep low)
+            preferred_hits = int((in_wider & below_preferred & (deep_close | deep_low)).sum())
+            # Wider hits: in wider but NOT preferred
+            wider_hits = int((in_wider & ~below_preferred).sum())
+            # Also count wider hits for those below preferred but not deep enough
+            wider_hits += int((in_wider & below_preferred & ~(deep_close | deep_low)).sum())
+        else:
+            # Vectorized for supply zones
+            in_wider = (after['high'] >= preferred) & (after['high'] <= wider)
+            above_preferred = after['high'] > preferred
+            deep_close = after['close'] > preferred
+            deep_high = after['high'] > (preferred + 0.25 * abs(preferred - wider))
+            
+            # Preferred hits: above preferred AND (deep close OR deep high)
+            preferred_hits = int((in_wider & above_preferred & (deep_close | deep_high)).sum())
+            # Wider hits: in wider but NOT above preferred
+            wider_hits = int((in_wider & ~above_preferred).sum())
+            # Also count wider hits for those above preferred but not deep enough
+            wider_hits += int((in_wider & above_preferred & ~(deep_close | deep_high)).sum())
+        
         return wider_hits, preferred_hits
 
     def rank_zones(self, zones: List[Dict], min_score: float = 5.0) -> List[Dict]:
