@@ -18,17 +18,51 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  scan:
+  # Split 77 symbols across 8 parallel jobs (~10 symbols each)
+  # Each job runs both weekly and daily strategies in ~25-30 minutes
+  matrix-setup:
     runs-on: ubuntu-latest
-    # Dual-strategy scan (weekly + daily passes) on 77 symbols runs ~10-12
-    # minutes. 60 minutes gives plenty of headroom for slow yfinance responses
-    # and avoiding "The operation was canceled" timeouts.
-    timeout-minutes: 60
+    outputs:
+      chunks: ${{ steps.split.outputs.chunks }}
+    steps:
+      - name: Split watchlist into chunks
+        id: split
+        run: |
+          # 77 symbols / 8 jobs = ~10 symbols per job
+          echo "chunks=$(python3 -c "
+import json
+symbols = [
+    'EURUSD=X', 'GBPUSD=X', 'AUDUSD=X', 'NZDUSD=X', 'USDJPY=X', 'USDCAD=X', 'USDCHF=X',
+    'EURGBP=X', 'EURJPY=X', 'EURAUD=X', 'EURCAD=X', 'EURCHF=X', 'EURNZD=X',
+    'GBPJPY=X', 'GBPAUD=X', 'GBPCAD=X', 'GBPCHF=X', 'GBPNZD=X',
+    'AUDJPY=X', 'AUDCAD=X', 'AUDCHF=X', 'AUDNZD=X',
+    'NZDJPY=X', 'NZDCAD=X', 'NZDCHF=X', 'CADJPY=X', 'CADCHF=X', 'CHFJPY=X',
+    'USDSGD=X', 'USDHKD=X', 'USDMXN=X', 'USDZAR=X', 'USDTRY=X', 'USDPLN=X', 'USDSEK=X', 'USDNOK=X',
+    'GC=F', 'SI=F', 'HG=F', 'PL=F',
+    'CL=F', 'BZ=F', 'NG=F',
+    'ES=F', 'NQ=F', 'YM=F', 'RTY=F', '^GDAXI', '^FTSE', '^N225', '^AXJO', '^HSI', '^FCHI', '^IBEX', '^STOXX50E', '^SSMI',
+    'ZB=F', 'ZN=F',
+    'BTC-USD', 'ETH-USD', 'XRP-USD', 'LTC-USD', 'BCH-USD', 'ADA-USD', 'SOL-USD', 'DOT-USD', 'LINK-USD', 'AVAX-USD', 'DOGE-USD',
+    'AAPL', 'MSFT', 'GOOG', 'META', 'AMZN', 'NFLX', 'TSLA', 'NVDA'
+]
+chunks = [symbols[i:i+10] for i in range(0, len(symbols), 10)]
+print(json.dumps(chunks))
+")" >> $GITHUB_OUTPUT
+
+  scan:
+    needs: matrix-setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk_id: [0, 1, 2, 3, 4, 5, 6, 7]
+    env:
+      CHUNK_SYMBOLS: ${{ fromJson(needs.matrix-setup.outputs.chunks)[matrix.chunk_id] }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Need full history so the commit-back step can push cleanly
           fetch-depth: 0
 
       - name: Set up Python
@@ -42,21 +76,127 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r scanner/requirements.txt
 
+      - name: Create chunk config
+        run: |
+          cd scanner
+          python3 << 'EOF'
+import os
+import yaml
+
+# Get symbols for this chunk
+symbols_str = os.environ.get('CHUNK_SYMBOLS', '[]')
+symbols = eval(symbols_str) if isinstance(symbols_str, str) else symbols_str
+
+# Load original config
+with open('BP_config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+
+# Filter watchlist to only include symbols in this chunk
+filtered_watchlist = []
+for entry in config['watchlist']:
+    if entry['symbol'] in symbols:
+        filtered_watchlist.append(entry)
+
+config['watchlist'] = filtered_watchlist
+
+# Save chunk-specific config
+with open(f'BP_config_chunk_{os.environ["MATRIX_CHUNK_ID"]}.yaml', 'w') as f:
+    yaml.dump(config, f)
+
+print(f"Chunk {os.environ['MATRIX_CHUNK_ID']}: {len(filtered_watchlist)} symbols")
+EOF
+        env:
+          MATRIX_CHUNK_ID: ${{ matrix.chunk_id }}
+
       - name: Run scanner (CI mode)
         env:
           AZALYST_CI: '1'
           AZALYST_DATA_DIR: ${{ github.workspace }}/data
           PYTHONUNBUFFERED: '1'
+          MATRIX_CHUNK_ID: ${{ matrix.chunk_id }}
         run: |
           cd scanner
-          python run_scanner.py --ci
+          python run_scanner.py --ci --config BP_config_chunk_${MATRIX_CHUNK_ID}.yaml --chunk-id ${MATRIX_CHUNK_ID}
+
+      - name: Upload partial results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-results-chunk-${{ matrix.chunk_id }}
+          path: |
+            data/scan_results_chunk_${{ matrix.chunk_id }}.json
+            scanner/scanner_chunk_${{ matrix.chunk_id }}.log
+          retention-days: 1
+          if-no-files-found: ignore
+
+  merge-results:
+    needs: scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all chunk artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: scan-results-chunk-*
+          merge-multiple: true
+          path: /tmp/artifacts
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Merge scan results
+        run: |
+          python3 << 'EOF'
+import json
+import glob
+import os
+
+# Merge all chunk results
+all_results = []
+for result_file in glob.glob('/tmp/artifacts/*scan_results_chunk_*.json'):
+    try:
+        with open(result_file, 'r') as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                all_results.extend(data)
+            elif 'signals' in data:
+                all_results.extend(data['signals'])
+    except Exception as e:
+        print(f"Error loading {result_file}: {e}")
+
+# Save merged results
+os.makedirs('data', exist_ok=True)
+with open('data/scan_results.json', 'w') as f:
+    json.dump({'signals': all_results, 'total_signals': len(all_results)}, f, indent=2)
+
+print(f"Merged {len(all_results)} signals from all chunks")
+EOF
+
+      - name: Commit merged results
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name  "azalyst-scanner[bot]"
+          git config user.email "azalyst-scanner@users.noreply.github.com"
+          git add data/scan_results.json data/paper_trader_state.json \
+                  data/scan_history.json data/discord_state.json 2>/dev/null || true
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M UTC")
+            git commit -m "scan: ${TIMESTAMP}"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
 
       - name: Send Discord notification
-        # Runs BEFORE the commit step so a successful POST updates
-        # discord_state.json, which then gets committed in the next step.
-        # Skipped silently if DISCORD_WEBHOOK_URL secret isn't set.
-        # DISCORD_USER_ID (optional) -- when set, the message @-pings the user
-        # so they get a desktop/mobile notification.
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_USER_ID:     ${{ secrets.DISCORD_USER_ID }}
@@ -68,31 +208,3 @@ jobs:
           else
             echo "DISCORD_WEBHOOK_URL secret not configured -- skipping Discord notification."
           fi
-
-      - name: Commit scan results
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.name  "azalyst-scanner[bot]"
-          git config user.email "azalyst-scanner@users.noreply.github.com"
-          git add data/scan_results.json data/paper_trader_state.json \
-                  data/scan_history.json data/discord_state.json 2>/dev/null || true
-          # Only commit if there is something to commit
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M UTC")
-            git commit -m "scan: ${TIMESTAMP}"
-            # Pull --rebase in case another job committed concurrently
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
-            git push origin "HEAD:${GITHUB_REF_NAME}"
-          fi
-
-      - name: Upload scan log artifact (debug aid)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: scanner-log-${{ github.run_id }}
-          path: scanner/scanner.log
-          retention-days: 7
-          if-no-files-found: ignore

@@ -622,50 +622,67 @@ def scan_all_markets(
 # ===================================================================
 
 def save_results(results: Dict) -> None:
-    """Write scan_results.json (overwrite) and append to scan_history.json."""
+    """Write scan_results.json (overwrite) and append to scan_history.json.
+    
+    In CI chunk mode (--chunk-id), saves to chunk-specific files for later merging.
+    """
+    # Check if we're running in chunk mode
+    chunk_id = os.environ.get("MATRIX_CHUNK_ID")
+    
+    if chunk_id:
+        # Save to chunk-specific file
+        chunk_results_file = DATA_DIR / f"scan_results_chunk_{chunk_id}.json"
+        with open(chunk_results_file, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2, default=str)
+        logger.info(f"Chunk {chunk_id} results saved to {chunk_results_file}")
+        
+        # Also save chunk-specific log
+        chunk_log_file = SCRIPT_DIR / f"scanner_chunk_{chunk_id}.log"
+        # Log file is already being written, just note it
+    else:
+        # Standard mode - save to main results file
+        with open(SCAN_RESULTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2, default=str)
+        logger.info(f"Scan results saved to {SCAN_RESULTS_FILE}")
 
-    # 1. Current scan results (dashboard reads this)
-    with open(SCAN_RESULTS_FILE, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2, default=str)
-    logger.info(f"Scan results saved to {SCAN_RESULTS_FILE}")
+    # 2. Append to history log (only in non-chunk mode to avoid conflicts)
+    if not chunk_id:
+        history_entry = {
+            "scan_time":        results["scan_time"],
+            "strategy":         results["strategy"],
+            "watchlist_scanned": results["watchlist_scanned"],
+            "signals_found":    results["signals_found"],
+            "auto_traded":      results["auto_traded"],
+            "account_balance":  results["account"].get("balance", 0),
+            "closed_pnl":       results["account"].get("closed_pnl", 0),
+            "win_rate":         results["account"].get("win_rate", 0),
+            "total_trades":     results["account"].get("total_trades", 0),
+            "signals_summary": [
+                {
+                    "symbol":    s.get("symbol"),
+                    "direction": s.get("direction"),
+                    "entry":     s.get("entry_price"),
+                    "composite": s.get("qualifier_scores", {}).get("composite", 0),
+                }
+                for s in results.get("signals", [])
+            ],
+        }
 
-    # 2. Append to history log
-    history_entry = {
-        "scan_time":        results["scan_time"],
-        "strategy":         results["strategy"],
-        "watchlist_scanned": results["watchlist_scanned"],
-        "signals_found":    results["signals_found"],
-        "auto_traded":      results["auto_traded"],
-        "account_balance":  results["account"].get("balance", 0),
-        "closed_pnl":       results["account"].get("closed_pnl", 0),
-        "win_rate":         results["account"].get("win_rate", 0),
-        "total_trades":     results["account"].get("total_trades", 0),
-        "signals_summary": [
-            {
-                "symbol":    s.get("symbol"),
-                "direction": s.get("direction"),
-                "entry":     s.get("entry_price"),
-                "composite": s.get("qualifier_scores", {}).get("composite", 0),
-            }
-            for s in results.get("signals", [])
-        ],
-    }
-
-    history: List[Dict] = []
-    if SCAN_HISTORY_FILE.exists():
-        try:
-            with open(SCAN_HISTORY_FILE, "r", encoding="utf-8") as f:
-                history = json.load(f)
-            if not isinstance(history, list):
+        history: List[Dict] = []
+        if SCAN_HISTORY_FILE.exists():
+            try:
+                with open(SCAN_HISTORY_FILE, "r", encoding="utf-8") as f:
+                    history = json.load(f)
+                if not isinstance(history, list):
+                    history = []
+            except (json.JSONDecodeError, Exception):
                 history = []
-        except (json.JSONDecodeError, Exception):
-            history = []
 
-    history.append(history_entry)
+        history.append(history_entry)
 
-    with open(SCAN_HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(history, f, indent=2, default=str)
-    logger.info(f"Scan history appended to {SCAN_HISTORY_FILE} ({len(history)} entries)")
+        with open(SCAN_HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=2, default=str)
+        logger.info(f"Scan history appended to {SCAN_HISTORY_FILE} ({len(history)} entries)")
 
 
 # ===================================================================
@@ -757,8 +774,19 @@ def main():
     print(f"{BOLD}{CYAN}============================================{RESET}")
     print()
 
-    # ---- Load config ----
+    # ---- Parse command-line args ----
+    # Support --config <file> for chunk-specific configs in parallel CI runs
     config_path = SCRIPT_DIR / "BP_config.yaml"
+    chunk_id = None
+    if "--config" in sys.argv:
+        idx = sys.argv.index("--config")
+        if idx + 1 < len(sys.argv):
+            config_path = Path(sys.argv[idx + 1])
+    if "--chunk-id" in sys.argv:
+        idx = sys.argv.index("--chunk-id")
+        if idx + 1 < len(sys.argv):
+            chunk_id = sys.argv[idx + 1]
+
     if not config_path.exists():
         print(f"{RED}ERROR: Config file not found at {config_path}{RESET}")
         sys.exit(1)
@@ -767,6 +795,8 @@ def main():
         config = yaml.safe_load(f)
 
     logger.info(f"Config loaded from {config_path}")
+    if chunk_id:
+        logger.info(f"Running chunk {chunk_id}")
 
     # ---- Determine watchlist ----
     # Default: read watchlist from BP_config.yaml (so user edits land in scans).
