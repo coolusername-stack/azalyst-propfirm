@@ -12,6 +12,8 @@ import os
 import json
 import yaml
 import logging
+import argparse
+import math
 import webbrowser
 import traceback
 from pathlib import Path
@@ -751,6 +753,22 @@ def print_summary(results: Dict) -> None:
 
 def main():
     """Main scanner entry point."""
+    parser = argparse.ArgumentParser(description="Blueprint Market Scanner")
+    parser.add_argument("--config", default="BP_config.yaml", help="Path to config file")
+    parser.add_argument("--chunk-id", type=int, default=None, help="Process only a specific chunk (0-7)")
+    parser.add_argument("--ci-mode", action="store_true", help="CI mode (no browser, no server)")
+    parser.add_argument("--ci", action="store_true", help="Alias for --ci-mode")
+    parser.add_argument("--no-open", action="store_true", help="Skip browser launch")
+    parser.add_argument("--no-serve", action="store_true", help="Skip local server")
+    parser.add_argument("--full-watchlist", action="store_true", help="Use internal baseline watchlist")
+    
+    args, unknown = parser.parse_known_args()
+
+    # Backwards compatibility/aliases
+    ci_mode = args.ci_mode or args.ci or os.environ.get("AZALYST_CI") == "1"
+    no_open = args.no_open or ci_mode
+    no_serve = args.no_serve or ci_mode
+
     print()
     print(f"{BOLD}{CYAN}============================================{RESET}")
     print(f"{BOLD}{CYAN}  Blueprint Trading System - Market Scanner{RESET}")
@@ -758,7 +776,11 @@ def main():
     print()
 
     # ---- Load config ----
-    config_path = SCRIPT_DIR / "BP_config.yaml"
+    config_path = SCRIPT_DIR / args.config
+    if not config_path.exists():
+        # Try relative to CWD
+        config_path = Path(args.config)
+
     if not config_path.exists():
         print(f"{RED}ERROR: Config file not found at {config_path}{RESET}")
         sys.exit(1)
@@ -769,43 +791,34 @@ def main():
     logger.info(f"Config loaded from {config_path}")
 
     # ---- Determine watchlist ----
-    # Default: read watchlist from BP_config.yaml (so user edits land in scans).
-    # `--full-watchlist` falls back to the in-code FULL_WATCHLIST baseline
-    # (futures-only set), and `--config-only` is kept as an alias.
-    if "--full-watchlist" in sys.argv:
+    if args.full_watchlist:
         watchlist = FULL_WATCHLIST
         logger.info(f"Using in-code FULL_WATCHLIST ({len(watchlist)} symbols)")
     else:
         watchlist = config.get("watchlist") or FULL_WATCHLIST
-        source = "BP_config.yaml" if config.get("watchlist") else "FULL_WATCHLIST (config empty)"
+        source = "BP_config.yaml" if config.get("watchlist") else "FULL_WATCHLIST"
         logger.info(f"Using watchlist from {source} ({len(watchlist)} symbols)")
 
-    # ---- Detect CI mode ----
-    # `--ci` (or env AZALYST_CI=1) skips the localhost server + browser launch.
-    # Used by GitHub Actions where there's no display and we just want the
-    # scan output written to disk, then committed back to the repo.
-    ci_mode = "--ci" in sys.argv or os.environ.get("AZALYST_CI") == "1"
+    # ---- Apply Chunking ----
+    if args.chunk_id is not None:
+        num_chunks = 8
+        chunk_size = math.ceil(len(watchlist) / num_chunks)
+        start_idx = args.chunk_id * chunk_size
+        end_idx = start_idx + chunk_size
+        watchlist = watchlist[start_idx:end_idx]
+        logger.info(f"CHUNK MODE: Processing chunk {args.chunk_id} ({len(watchlist)} symbols)")
 
-    # ---- Start the dashboard server FIRST so the user has something to look at
-    # while the scan runs. The server runs in a background thread; the new scan
-    # results land on disk when scan_all_markets() finishes, and the user can
-    # hit Refresh in the dashboard to see them. In CI mode we skip both.
+    # ---- Start the dashboard server FIRST ----
     server_thread = None
-    if ci_mode:
-        logger.info("CI mode: skipping localhost server + browser launch")
-    elif "--no-open" not in sys.argv and DASHBOARD_FILE.exists():
-        if "--no-serve" in sys.argv:
+    if not ci_mode and not no_open and DASHBOARD_FILE.exists():
+        if no_serve:
             dashboard_path = str(DASHBOARD_FILE)
             print(f"  Opening dashboard (file://): {dashboard_path}")
-            print(f"  {YELLOW}NOTE: file:// blocks JSON fetch in modern browsers.{RESET}")
             if sys.platform == "win32":
                 os.startfile(dashboard_path)
             else:
                 webbrowser.open(DASHBOARD_FILE.as_uri())
         else:
-            # Serve from the repo root so /dashboard/dashboard.html can fetch
-            # /data/scan_results.json with relative paths -- mirrors the
-            # GitHub Pages layout exactly.
             server_thread = _start_server_in_background(_REPO_ROOT, port=8765,
                                                         open_path="/dashboard/dashboard.html")
 
@@ -820,7 +833,13 @@ def main():
         sys.exit(1)
 
     # ---- Save results ----
-    save_results(results)
+    if args.chunk_id is not None:
+        chunk_file = SCRIPT_DIR / f"chunk_result_{args.chunk_id}.json"
+        with open(chunk_file, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2, default=str)
+        logger.info(f"Chunk results saved to {chunk_file}")
+    else:
+        save_results(results)
 
     # ---- Print summary ----
     print_summary(results)
@@ -828,7 +847,7 @@ def main():
     print(f"  {DIM}Log file: {LOG_FILE}{RESET}")
     print()
 
-    # ---- Block until Ctrl-C so the dashboard server stays up ----
+    # ---- Block until Ctrl-C ----
     if server_thread is not None:
         print(f"  {GREEN}Refresh the dashboard tab to see the latest scan.{RESET}")
         print(f"  {DIM}Press Ctrl-C in this window to stop the server.{RESET}")

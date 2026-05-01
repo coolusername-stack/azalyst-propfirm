@@ -1,98 +1,78 @@
-name: Scan markets (hourly)
+name: Market Scanner (Parallel)
 
 on:
+  workflow_dispatch:
   schedule:
-    # Run every hour at :05 (5 min past the hour, to avoid GitHub's :00 cron-traffic spike)
-    - cron: '5 * * * *'
-  workflow_dispatch: {}        # also allow manual run from the Actions tab
-
-permissions:
-  contents: write              # required so the workflow can commit data/ back to the repo
-
-# Only one scan run at a time. If a new run starts while one is in progress,
-# the in-progress one finishes and the new one queues. We do NOT cancel
-# in-progress runs because that would leave paper_trader_state.json
-# half-written.
-concurrency:
-  group: market-scan
-  cancel-in-progress: false
+    - cron: '0 8 * * 1-5' # Runs at 8 AM UTC on weekdays
 
 jobs:
-  scan:
+  scan-chunk:
     runs-on: ubuntu-latest
-    # Dual-strategy scan (weekly + daily passes) on 77 symbols runs ~10-12
-    # minutes. 60 minutes gives plenty of headroom for slow yfinance responses
-    # and avoiding "The operation was canceled" timeouts.
-    timeout-minutes: 60
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk_id: [0, 1, 2, 3, 4, 5, 6, 7]
+    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          # Need full history so the commit-back step can push cleanly
-          fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: '3.9'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r scanner/requirements.txt
 
-      - name: Run scanner (CI mode)
+      - name: Run Scanner Chunk
         env:
-          AZALYST_CI: '1'
-          AZALYST_DATA_DIR: ${{ github.workspace }}/data
-          PYTHONUNBUFFERED: '1'
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          CHUNK_ID: ${{ matrix.chunk_id }}
         run: |
           cd scanner
-          python run_scanner.py --ci
+          echo "Running chunk $CHUNK_ID..."
+          python run_scanner.py --config BP_config.yaml --chunk-id $CHUNK_ID --ci-mode
 
-      - name: Send Discord notification
-        # Runs BEFORE the commit step so a successful POST updates
-        # discord_state.json, which then gets committed in the next step.
-        # Skipped silently if DISCORD_WEBHOOK_URL secret isn't set.
-        # DISCORD_USER_ID (optional) -- when set, the message @-pings the user
-        # so they get a desktop/mobile notification.
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          DISCORD_USER_ID:     ${{ secrets.DISCORD_USER_ID }}
-          AZALYST_DATA_DIR:    ${{ github.workspace }}/data
-        run: |
-          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
-            cd scanner
-            python send_discord.py --always-send
-          else
-            echo "DISCORD_WEBHOOK_URL secret not configured -- skipping Discord notification."
-          fi
-
-      - name: Commit scan results
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.name  "azalyst-scanner[bot]"
-          git config user.email "azalyst-scanner@users.noreply.github.com"
-          git add data/scan_results.json data/paper_trader_state.json \
-                  data/scan_history.json data/discord_state.json 2>/dev/null || true
-          # Only commit if there is something to commit
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M UTC")
-            git commit -m "scan: ${TIMESTAMP}"
-            # Pull --rebase in case another job committed concurrently
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
-            git push origin "HEAD:${GITHUB_REF_NAME}"
-          fi
-
-      - name: Upload scan log artifact (debug aid)
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Upload Chunk Results
+        uses: actions/upload-artifact@v3
         with:
-          name: scanner-log-${{ github.run_id }}
-          path: scanner/scanner.log
-          retention-days: 7
+          name: chunk-results-${{ matrix.chunk_id }}
+          path: scanner/chunk_result_${{ matrix.chunk_id }}.json
           if-no-files-found: ignore
+
+  merge-results:
+    needs: scan-chunk
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r scanner/requirements.txt
+
+      - name: Download all chunks
+        uses: actions/download-artifact@v3
+        with:
+          path: downloaded_chunks
+
+      - name: Merge Results
+        run: |
+          cd scanner
+          python merge_results.py --input-dir ../downloaded_chunks --output-file final_scan_results.json
+
+      - name: Upload Final Result
+        uses: actions/upload-artifact@v3
+        with:
+          name: final-scan-results
+          path: scanner/final_scan_results.json
