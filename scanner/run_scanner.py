@@ -414,7 +414,8 @@ def scan_symbol(
     for ref_sym in ref_symbols:
         # yfinance only provides 1h data for the last 730 days (2 years).
         # We must use 2y instead of 5y for the LTF pass.
-        ref_period = "2y" if ltf in ("60m", "15m", "5m") else "5y"
+        # 729d keeps us safely inside Yahoo's 730-day intraday limit
+        ref_period = "729d" if ltf in ("60m", "30m", "15m", "5m", "1m") else "5y"
         ref_df = fetcher.fetch_ohlcv(ref_sym, interval=ltf, period=ref_period)
         if not ref_df.empty:
             val_refs[ref_sym] = ref_df
@@ -536,10 +537,19 @@ def scan_all_markets(
                 for tf_label in (htf, ltf):
                     if (ohlcv_cache.get(sym) or {}).get(tf_label) is not None:
                         continue
+                    # Yahoo Finance only provides intraday (1h) data for the
+                    # last 730 days. Using "5y" on 60m/15m intervals causes a
+                    # hard API error. Cap intraday fetches at 729d to stay safe.
+                    if tf_label in ("1mo", "1wk"):
+                        _cache_period = "10y"
+                    elif tf_label in ("60m", "30m", "15m", "5m", "1m"):
+                        _cache_period = "729d"
+                    else:
+                        _cache_period = "5y"
                     df_tf = fetcher.fetch_ohlcv(
                         sym,
                         interval=tf_label,
-                        period="10y" if tf_label in ("1mo", "1wk") else "5y",
+                        period=_cache_period,
                     )
                     if not df_tf.empty:
                         tail = df_tf.tail(300).copy()

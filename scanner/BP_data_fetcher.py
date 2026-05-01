@@ -129,6 +129,10 @@ class DataFetcher:
                 period = '10y'
             elif tf == '1d':
                 period = '5y'
+            elif tf in ('60m', '30m', '15m', '5m', '1m'):
+                # Yahoo hard limit: 1h data only available for last 730 days.
+                # Use 729d to stay safely within the window.
+                period = '729d'
             else:
                 period = '2y'
 
