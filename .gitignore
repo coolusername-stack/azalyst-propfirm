@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+
+# Local scanner artifacts (only committed when produced by CI)
+scanner/scanner.log
+scanner/.deps_installed
+scanner/__pycache__/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# GitHub Pages build output
+_site/

@@ -1,0 +1,26 @@
+[
+  {
+    "scan_time": "2026-05-01T13:18:49.596440",
+    "strategy": "weekly",
+    "watchlist_scanned": 3,
+    "signals_found": 0,
+    "auto_traded": 0,
+    "account_balance": 100000.0,
+    "closed_pnl": 0.0,
+    "win_rate": 0.0,
+    "total_trades": 0,
+    "signals_summary": []
+  },
+  {
+    "scan_time": "2026-05-01T13:20:10.981055",
+    "strategy": "weekly",
+    "watchlist_scanned": 3,
+    "signals_found": 0,
+    "auto_traded": 0,
+    "account_balance": 100000.0,
+    "closed_pnl": 0.0,
+    "win_rate": 0.0,
+    "total_trades": 0,
+    "signals_summary": []
+  }
+]

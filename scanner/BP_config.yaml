@@ -1,0 +1,207 @@
+# Blueprint Trading Dashboard Configuration -- Azalyst Propfirm edition
+# ==========================================
+
+# ============================================================
+# FUNDINGPIPS-STYLE PROP FIRM RULES
+# ============================================================
+# When enabled, the paper trader simulates a Fundingpips challenge
+# account: $100k starting balance, $5k max daily loss, $10k max total
+# loss. Trades that would breach either limit at submit time are
+# blocked. Daily window resets at 17:00 New York time (22:00 UTC).
+# ------------------------------------------------------------
+prop_firm:
+  enabled: true
+  account_size: 100000.0
+  max_daily_loss_usd: 5000.0     # Maximum Daily Loss (resets each session)
+  max_total_loss_usd: 10000.0    # Maximum Loss (lifetime drawdown limit)
+  daily_reset_hour_utc: 22       # 17:00 NY time = 22:00 UTC (give-or-take DST)
+
+risk:
+  # Used as fallback when prop_firm.enabled is false. When prop_firm is on,
+  # `prop_firm.account_size` overrides this.
+  account_balance: 100000.0
+  risk_per_trade_pct: 1.0          # Standard / with-trend setups (= $1,000 per trade on $100k)
+  reduced_risk_pct: 0.5            # Counter-trend & anticipatory setups (HAI Module 4)
+  max_daily_loss_pct: 5.0
+  max_total_loss_pct: 10.0
+  max_open_positions: 3
+
+active_strategy: "weekly"
+
+watchlist:
+  # ============================================================
+  # FUNDINGPIPS-TRADABLE WATCHLIST (Phase 6 expanded, 2026-05-01)
+  # ~60 symbols covering FP's ~48 instruments + 8 mega-caps required by methodology.
+  # ============================================================
+  # `symbol`     -- yfinance ticker for OHLCV charts
+  # `name`       -- broker symbol shown on the dashboard
+  # `asset_class` -- drives indicator settings (COT lookback, Valuation refs, etc.)
+  # `cot_symbol` -- optional override for COT lookup when OHLCV ticker is a
+  #                 spot/CFD that has no direct CFTC report. Defaults to `symbol`.
+  # ------------------------------------------------------------
+
+  # ── FOREX MAJORS — USD on right (direct COT mapping) ──────────
+  - { symbol: "EURUSD=X", name: "EURUSD", asset_class: "forex", cot_symbol: "6E=F" }
+  - { symbol: "GBPUSD=X", name: "GBPUSD", asset_class: "forex", cot_symbol: "6B=F" }
+  - { symbol: "AUDUSD=X", name: "AUDUSD", asset_class: "forex", cot_symbol: "6A=F" }
+  - { symbol: "NZDUSD=X", name: "NZDUSD", asset_class: "forex", cot_symbol: "6N=F" }
+
+  # ── FOREX MAJORS — USD on left (inverted; rules engine flips via DXY) ──
+  - { symbol: "USDJPY=X", name: "USDJPY", asset_class: "forex", cot_symbol: "6J=F" }
+  - { symbol: "USDCAD=X", name: "USDCAD", asset_class: "forex", cot_symbol: "6C=F" }
+  - { symbol: "USDCHF=X", name: "USDCHF", asset_class: "forex", cot_symbol: "6S=F" }
+
+  # ── FOREX CROSSES (EUR/GBP/AUD/JPY/CHF/NZD/CAD groups) ───────
+  - { symbol: "EURGBP=X", name: "EURGBP", asset_class: "forex" }
+  - { symbol: "EURJPY=X", name: "EURJPY", asset_class: "forex" }
+  - { symbol: "EURAUD=X", name: "EURAUD", asset_class: "forex" }
+  - { symbol: "EURCAD=X", name: "EURCAD", asset_class: "forex" }
+  - { symbol: "EURCHF=X", name: "EURCHF", asset_class: "forex" }
+  - { symbol: "EURNZD=X", name: "EURNZD", asset_class: "forex" }
+  - { symbol: "GBPJPY=X", name: "GBPJPY", asset_class: "forex" }
+  - { symbol: "GBPAUD=X", name: "GBPAUD", asset_class: "forex" }
+  - { symbol: "GBPCAD=X", name: "GBPCAD", asset_class: "forex" }
+  - { symbol: "GBPCHF=X", name: "GBPCHF", asset_class: "forex" }
+  - { symbol: "GBPNZD=X", name: "GBPNZD", asset_class: "forex" }
+  - { symbol: "AUDJPY=X", name: "AUDJPY", asset_class: "forex" }
+  - { symbol: "AUDCAD=X", name: "AUDCAD", asset_class: "forex" }
+  - { symbol: "AUDCHF=X", name: "AUDCHF", asset_class: "forex" }
+  - { symbol: "AUDNZD=X", name: "AUDNZD", asset_class: "forex" }
+  - { symbol: "NZDJPY=X", name: "NZDJPY", asset_class: "forex" }
+  - { symbol: "NZDCAD=X", name: "NZDCAD", asset_class: "forex" }
+  - { symbol: "NZDCHF=X", name: "NZDCHF", asset_class: "forex" }
+  - { symbol: "CADJPY=X", name: "CADJPY", asset_class: "forex" }
+  - { symbol: "CADCHF=X", name: "CADCHF", asset_class: "forex" }
+  - { symbol: "CHFJPY=X", name: "CHFJPY", asset_class: "forex" }
+
+  # ── FOREX EXOTICS (FP offers a curated set; common ones) ─────
+  - { symbol: "USDSGD=X", name: "USDSGD", asset_class: "forex" }
+  - { symbol: "USDHKD=X", name: "USDHKD", asset_class: "forex" }
+  - { symbol: "USDMXN=X", name: "USDMXN", asset_class: "forex" }
+  - { symbol: "USDZAR=X", name: "USDZAR", asset_class: "forex" }
+  - { symbol: "USDTRY=X", name: "USDTRY", asset_class: "forex" }
+  - { symbol: "USDPLN=X", name: "USDPLN", asset_class: "forex" }
+  - { symbol: "USDSEK=X", name: "USDSEK", asset_class: "forex" }
+  - { symbol: "USDNOK=X", name: "USDNOK", asset_class: "forex" }
+
+  # ── PRECIOUS METALS (FP: XAUUSD/XAGUSD; futures used for chart+COT) ──
+  - { symbol: "GC=F", name: "XAUUSD (Gold)",     asset_class: "precious_metals" }
+  - { symbol: "SI=F", name: "XAGUSD (Silver)",   asset_class: "precious_metals" }
+  - { symbol: "HG=F", name: "XCUUSD (Copper)",   asset_class: "precious_metals" }
+  - { symbol: "PL=F", name: "XPTUSD (Platinum)", asset_class: "precious_metals" }
+
+  # ── ENERGIES (FP: USOIL, UKOIL, NATGAS) ─────────────────────
+  - { symbol: "CL=F", name: "USOIL (WTI Crude)",   asset_class: "energies" }
+  - { symbol: "BZ=F", name: "UKOIL (Brent Crude)", asset_class: "energies" }
+  - { symbol: "NG=F", name: "NATGAS (Natural Gas)", asset_class: "energies" }
+
+  # ── EQUITY INDICES (FP: US + global indices) ────────────────
+  - { symbol: "ES=F",      name: "US500 (S&P 500)",       asset_class: "equity_indices" }
+  - { symbol: "NQ=F",      name: "US100 (Nasdaq 100)",    asset_class: "equity_indices" }
+  - { symbol: "YM=F",      name: "US30 (Dow Jones)",      asset_class: "equity_indices" }
+  - { symbol: "RTY=F",     name: "US2000 (Russell)",      asset_class: "equity_indices" }
+  - { symbol: "^GDAXI",    name: "GER40 (DAX)",           asset_class: "equity_indices" }
+  - { symbol: "^FTSE",     name: "UK100 (FTSE)",          asset_class: "equity_indices" }
+  - { symbol: "^N225",     name: "JP225 (Nikkei)",        asset_class: "equity_indices" }
+  - { symbol: "^AXJO",     name: "AUS200 (ASX)",          asset_class: "equity_indices" }
+  - { symbol: "^HSI",      name: "HK50 (Hang Seng)",      asset_class: "equity_indices" }
+  - { symbol: "^FCHI",     name: "FRA40 (CAC)",           asset_class: "equity_indices" }
+  - { symbol: "^IBEX",     name: "ESP35 (IBEX)",          asset_class: "equity_indices" }
+  - { symbol: "^STOXX50E", name: "EU50 (Euro Stoxx)",     asset_class: "equity_indices" }
+  - { symbol: "^SSMI",     name: "SUI30 (SMI)",           asset_class: "equity_indices" }
+
+  # ── INTEREST RATES (cross-asset gates; not always FP-tradable) ──
+  - { symbol: "ZB=F", name: "USB30Y (30Y Bonds)", asset_class: "interest_rates" }
+  - { symbol: "ZN=F", name: "USB10Y (10Y Notes)", asset_class: "interest_rates" }
+
+  # ── CRYPTO (FP: ~10-12 majors) ──────────────────────────────
+  - { symbol: "BTC-USD",  name: "BTCUSD",  asset_class: "crypto", cot_symbol: "BTC=F" }
+  - { symbol: "ETH-USD",  name: "ETHUSD",  asset_class: "crypto", cot_symbol: "ETH=F" }
+  - { symbol: "XRP-USD",  name: "XRPUSD",  asset_class: "crypto" }
+  - { symbol: "LTC-USD",  name: "LTCUSD",  asset_class: "crypto" }
+  - { symbol: "BCH-USD",  name: "BCHUSD",  asset_class: "crypto" }
+  - { symbol: "ADA-USD",  name: "ADAUSD",  asset_class: "crypto" }
+  - { symbol: "SOL-USD",  name: "SOLUSD",  asset_class: "crypto" }
+  - { symbol: "DOT-USD",  name: "DOTUSD",  asset_class: "crypto" }
+  - { symbol: "LINK-USD", name: "LINKUSD", asset_class: "crypto" }
+  - { symbol: "AVAX-USD", name: "AVAXUSD", asset_class: "crypto" }
+  - { symbol: "DOGE-USD", name: "DOGEUSD", asset_class: "crypto" }
+
+  # ── MEGA-CAP STOCKS (Phase 6 dual-gate + 8-stock NQ basket) ───
+  # Required as INPUTS to the methodology even when not directly tradable on FP.
+  # Comment out if you only want symbols you can execute.
+  - { symbol: "AAPL", name: "AAPL (Apple)",     asset_class: "equities" }
+  - { symbol: "MSFT", name: "MSFT (Microsoft)", asset_class: "equities" }
+  - { symbol: "GOOG", name: "GOOG (Alphabet)",  asset_class: "equities" }
+  - { symbol: "META", name: "META (Meta)",      asset_class: "equities" }
+  - { symbol: "AMZN", name: "AMZN (Amazon)",    asset_class: "equities" }
+  - { symbol: "NFLX", name: "NFLX (Netflix)",   asset_class: "equities" }
+  - { symbol: "TSLA", name: "TSLA (Tesla)",     asset_class: "equities" }
+  - { symbol: "NVDA", name: "NVDA (Nvidia)",    asset_class: "equities" }
+
+zone_detection:
+  leg_in_min_candles: 3
+  base_max_candles: 6
+  base_min_candles: 1
+  leg_out_body_multiplier: 2.0
+  base_wick_max_pct: 0.50
+  profit_margin_min_ratio: 3.0
+
+qualifier_weights:
+  departure: 0.30
+  base_duration: 0.10
+  freshness: 0.15
+  originality: 0.15
+  profit_margin: 0.10
+  arrival: 0.10
+  level_on_top: 0.10
+
+patterns:
+  hammer:
+    body_max_pct: 0.30
+    lower_wick_min_mult: 2.0
+    upper_wick_max_pct: 0.20    # Loosened from 0.10 -- Bernd doesn't enforce a hard cap
+  bullish_engulfing:
+    body_engulf_required: true
+  shooting_star:
+    body_max_pct: 0.30
+    upper_wick_min_mult: 2.0
+    lower_wick_max_pct: 0.20
+  hanging_man:
+    body_max_pct: 0.30
+    lower_wick_min_mult: 2.0
+    upper_wick_max_pct: 0.20
+
+stop_loss:
+  fibonacci_extension_pct: 33.0
+  breakeven_at_r: 1.0                # Conservative: BE at T1 (textbook)
+  breakeven_at_half_target: true     # Aggressive: BE at half-way to T1 (Bernd's live)
+  partial_take_r: 2.0
+  full_take_r: 3.0
+
+cot:
+  lookback_weeks: 52
+  upper_extreme: 80
+  lower_extreme: 20
+
+valuation:
+  length: 10                          # default ROC ("cycle" period)
+  rescale_length: 100
+  overvalued_threshold: 75
+  undervalued_threshold: -75
+  references: ["DX-Y.NYB", "GC=F", "ZB=F"]
+  # Per-symbol cycle (ROC) override -- Bernd's "30/10/13-day cycles" are
+  # just the Valuation indicator with different ROC periods (Hybrid AI
+  # 1:53:38). Tune per asset based on backtest. Examples (uncomment to use):
+  cycle_per_symbol: {}
+  #   AAPL:  30        # Apple = 30-day cycle (HAI 0:59:34)
+  #   ES=F:  13        # SPX weekly = 13
+  #   NQ=F:  10        # Nasdaq tech = sharper, 10-day cycle
+
+seasonality:
+  lookback_years: 15
+  bias_lookahead_bars: 20
+
+api:
+  host: "0.0.0.0"
+  port: 8000

@@ -1,0 +1,62 @@
+name: Deploy dashboard to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dashboard/**'
+      - 'data/**'
+      - 'index.html'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent Pages deployment per ref. Cancel any in-progress
+# deploys when a new one starts -- the latest commit always wins.
+concurrency:
+  group: 'pages-${{ github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Stage site
+        run: |
+          mkdir -p _site
+          # Top-level redirect (so https://<user>.github.io/<repo>/ lands on the dashboard)
+          cp index.html _site/index.html
+          # Static dashboard
+          cp -r dashboard _site/dashboard
+          # Scan results read by the dashboard via fetch('../data/scan_results.json')
+          mkdir -p _site/data
+          # The scan workflow may not have run yet (first push) -- only copy what exists
+          if [ -d data ]; then cp -r data/* _site/data/ 2>/dev/null || true; fi
+          # Ensure at least an empty placeholder exists so the dashboard fetch doesn't 404
+          [ -f _site/data/scan_results.json ] || echo '{"signals":[],"positions":[],"trade_history":[],"account":{"prop_firm":{"enabled":false}}}' > _site/data/scan_results.json
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

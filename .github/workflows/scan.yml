@@ -1,0 +1,95 @@
+name: Scan markets (hourly)
+
+on:
+  schedule:
+    # Run every hour at :05 (5 min past the hour, to avoid GitHub's :00 cron-traffic spike)
+    - cron: '5 * * * *'
+  workflow_dispatch: {}        # also allow manual run from the Actions tab
+
+permissions:
+  contents: write              # required so the workflow can commit data/ back to the repo
+
+# Only one scan run at a time. If a new run starts while one is in progress,
+# the in-progress one finishes and the new one queues. We do NOT cancel
+# in-progress runs because that would leave paper_trader_state.json
+# half-written.
+concurrency:
+  group: market-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Need full history so the commit-back step can push cleanly
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r scanner/requirements.txt
+
+      - name: Run scanner (CI mode)
+        env:
+          AZALYST_CI: '1'
+          AZALYST_DATA_DIR: ${{ github.workspace }}/data
+          PYTHONUNBUFFERED: '1'
+        run: |
+          cd scanner
+          python run_scanner.py --ci
+
+      - name: Send Discord notification
+        # Runs BEFORE the commit step so a successful POST updates
+        # discord_state.json, which then gets committed in the next step.
+        # Skipped silently if DISCORD_WEBHOOK_URL secret isn't set.
+        # DISCORD_USER_ID (optional) -- when set, the message @-pings the user
+        # so they get a desktop/mobile notification.
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_USER_ID:     ${{ secrets.DISCORD_USER_ID }}
+          AZALYST_DATA_DIR:    ${{ github.workspace }}/data
+        run: |
+          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+            cd scanner
+            python send_discord.py --always-send
+          else
+            echo "DISCORD_WEBHOOK_URL secret not configured -- skipping Discord notification."
+          fi
+
+      - name: Commit scan results
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name  "azalyst-scanner[bot]"
+          git config user.email "azalyst-scanner@users.noreply.github.com"
+          git add data/scan_results.json data/paper_trader_state.json \
+                  data/scan_history.json data/discord_state.json 2>/dev/null || true
+          # Only commit if there is something to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M UTC")
+            git commit -m "scan: ${TIMESTAMP}"
+            # Pull --rebase in case another job committed concurrently
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+
+      - name: Upload scan log artifact (debug aid)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scanner-log-${{ github.run_id }}
+          path: scanner/scanner.log
+          retention-days: 7
+          if-no-files-found: ignore
