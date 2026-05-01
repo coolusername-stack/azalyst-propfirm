@@ -21,8 +21,9 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     # Dual-strategy scan (weekly + daily passes) on 77 symbols runs ~10-12
-    # minutes. 25 minutes gives headroom for slow yfinance responses.
-    timeout-minutes: 25
+    # minutes. 60 minutes gives plenty of headroom for slow yfinance responses
+    # and avoiding "The operation was canceled" timeouts.
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4

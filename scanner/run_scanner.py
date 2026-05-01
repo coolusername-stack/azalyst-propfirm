@@ -412,7 +412,10 @@ def scan_symbol(
     # over the asset-class default.
     ref_symbols = VALUATION_REFS_PER_SYMBOL.get(sym) or VALUATION_REFS.get(ac, ["DX-Y.NYB"])
     for ref_sym in ref_symbols:
-        ref_df = fetcher.fetch_ohlcv(ref_sym, interval=ltf, period="5y")
+        # yfinance only provides 1h data for the last 730 days (2 years).
+        # We must use 2y instead of 5y for the LTF pass.
+        ref_period = "2y" if ltf in ("60m", "15m", "5m") else "5y"
+        ref_df = fetcher.fetch_ohlcv(ref_sym, interval=ltf, period=ref_period)
         if not ref_df.empty:
             val_refs[ref_sym] = ref_df
 
