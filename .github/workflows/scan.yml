@@ -72,7 +72,7 @@ jobs:
           python merge_results.py --input-dir ../downloaded_chunks --output-file final_scan_results.json
 
       - name: Upload Final Result
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: final-scan-results
           path: scanner/final_scan_results.json
