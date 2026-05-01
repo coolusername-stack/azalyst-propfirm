@@ -107,9 +107,11 @@ Once you have the URL, store it as a repo secret named **`DISCORD_WEBHOOK_URL`**
 gh secret set DISCORD_WEBHOOK_URL --body "<paste-url-here>" --repo <owner>/<repo>
 ```
 
-#### 4d. Add the Discord user-ID secret (so the user gets pinged)
+#### 4d. Add the Discord user-ID secret (ping ON NEW SIGNALS ONLY)
 
-The user wants to be **@-mentioned on every message** so they don't miss alerts. Their Discord user-snowflake ID is:
+The user wants to be **@-mentioned only when a new trade signal is detected**, NOT on routine hourly updates, closed trades, or breach status. The scanner already implements this: the @-ping is conditional on the `NEW SIGNALS THIS SCAN` section being non-empty.
+
+The user's Discord user-snowflake ID is:
 
 ```
 63959528194052118

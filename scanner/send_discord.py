@@ -35,7 +35,24 @@ import requests
 # ── Paths ──────────────────────────────────────────────────────────────
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT  = SCRIPT_DIR.parent
-DATA_DIR   = Path(os.environ.get("AZALYST_DATA_DIR") or (REPO_ROOT / "data"))
+
+def _resolve_data_dir() -> Path:
+    """Find scan_results.json regardless of which folder layout we're in.
+
+    Priority:
+      1. `AZALYST_DATA_DIR` env override (CI use).
+      2. `<repo_root>/data/`         -- Azalyst Propfirm nested layout.
+      3. `<script_dir>/`             -- Propfirm Trading Dashboard flat layout.
+    """
+    env_override = os.environ.get("AZALYST_DATA_DIR")
+    if env_override:
+        return Path(env_override)
+    nested = REPO_ROOT / "data"
+    if (nested / "scan_results.json").exists() or nested.exists():
+        return nested
+    return SCRIPT_DIR
+
+DATA_DIR   = _resolve_data_dir()
 SCAN_FILE  = DATA_DIR / "scan_results.json"
 STATE_FILE = DATA_DIR / "discord_state.json"
 
@@ -464,7 +481,11 @@ def main() -> int:
               file=sys.stderr)
         return 0  # not an error -- some users may opt out of Discord
 
-    ok = post_to_discord(args.webhook_url, msg, user_id=args.user_id)
+    # Per user preference: only @-ping when there are new signals to copy
+    # to Fundingpips. Hourly status / closed-trade / breach updates go
+    # silently so the channel doesn't spam phone notifications.
+    ping_user_id = args.user_id if new_signals else None
+    ok = post_to_discord(args.webhook_url, msg, user_id=ping_user_id)
     if not ok:
         print("[discord] All attempts failed.", file=sys.stderr)
         return 1

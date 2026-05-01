@@ -26,7 +26,24 @@ risk:
   max_total_loss_pct: 10.0
   max_open_positions: 3
 
-active_strategy: "weekly"
+# ============================================================
+# STRATEGY -- which income-strategy timeframe(s) to scan
+# ============================================================
+# - active_strategy:   global default when a watchlist entry has no
+#                      `strategies` field. The legacy single-pass mode.
+# - default_strategies: list of strategies to scan PER SYMBOL when the
+#                       entry has no override. Each name maps to an
+#                       (HTF, LTF) pair via STRATEGY_TIMEFRAMES in
+#                       run_scanner.py. For the FundingPips monthly
+#                       competition we want BOTH 'weekly' (htf=1wk, ltf=1d)
+#                       and 'daily' (htf=1d, ltf=60m) so we catch big
+#                       swings AND short-hold daily setups.
+# - Per-watchlist `strategies: [...]` field overrides this default.
+#   Crypto entries are pinned to ['daily'] only -- weekly bars on crypto
+#   are too few/volatile to be meaningful per the methodology audit.
+# ------------------------------------------------------------
+active_strategy: "daily"
+default_strategies: ["weekly", "daily"]
 
 watchlist:
   # ============================================================
@@ -114,18 +131,18 @@ watchlist:
   - { symbol: "ZB=F", name: "USB30Y (30Y Bonds)", asset_class: "interest_rates" }
   - { symbol: "ZN=F", name: "USB10Y (10Y Notes)", asset_class: "interest_rates" }
 
-  # ── CRYPTO (FP: ~10-12 majors) ──────────────────────────────
-  - { symbol: "BTC-USD",  name: "BTCUSD",  asset_class: "crypto", cot_symbol: "BTC=F" }
-  - { symbol: "ETH-USD",  name: "ETHUSD",  asset_class: "crypto", cot_symbol: "ETH=F" }
-  - { symbol: "XRP-USD",  name: "XRPUSD",  asset_class: "crypto" }
-  - { symbol: "LTC-USD",  name: "LTCUSD",  asset_class: "crypto" }
-  - { symbol: "BCH-USD",  name: "BCHUSD",  asset_class: "crypto" }
-  - { symbol: "ADA-USD",  name: "ADAUSD",  asset_class: "crypto" }
-  - { symbol: "SOL-USD",  name: "SOLUSD",  asset_class: "crypto" }
-  - { symbol: "DOT-USD",  name: "DOTUSD",  asset_class: "crypto" }
-  - { symbol: "LINK-USD", name: "LINKUSD", asset_class: "crypto" }
-  - { symbol: "AVAX-USD", name: "AVAXUSD", asset_class: "crypto" }
-  - { symbol: "DOGE-USD", name: "DOGEUSD", asset_class: "crypto" }
+  # ── CRYPTO (FP: ~10-12 majors) -- pinned to DAILY only ──────
+  - { symbol: "BTC-USD",  name: "BTCUSD",  asset_class: "crypto", cot_symbol: "BTC=F", strategies: ["daily"] }
+  - { symbol: "ETH-USD",  name: "ETHUSD",  asset_class: "crypto", cot_symbol: "ETH=F", strategies: ["daily"] }
+  - { symbol: "XRP-USD",  name: "XRPUSD",  asset_class: "crypto", strategies: ["daily"] }
+  - { symbol: "LTC-USD",  name: "LTCUSD",  asset_class: "crypto", strategies: ["daily"] }
+  - { symbol: "BCH-USD",  name: "BCHUSD",  asset_class: "crypto", strategies: ["daily"] }
+  - { symbol: "ADA-USD",  name: "ADAUSD",  asset_class: "crypto", strategies: ["daily"] }
+  - { symbol: "SOL-USD",  name: "SOLUSD",  asset_class: "crypto", strategies: ["daily"] }
+  - { symbol: "DOT-USD",  name: "DOTUSD",  asset_class: "crypto", strategies: ["daily"] }
+  - { symbol: "LINK-USD", name: "LINKUSD", asset_class: "crypto", strategies: ["daily"] }
+  - { symbol: "AVAX-USD", name: "AVAXUSD", asset_class: "crypto", strategies: ["daily"] }
+  - { symbol: "DOGE-USD", name: "DOGEUSD", asset_class: "crypto", strategies: ["daily"] }
 
   # ── MEGA-CAP STOCKS (Phase 6 dual-gate + 8-stock NQ basket) ───
   # Required as INPUTS to the methodology even when not directly tradable on FP.

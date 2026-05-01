@@ -101,14 +101,39 @@ STRATEGY_TIMEFRAMES = {
 }
 
 # ---------------------------------------------------------------------------
-# Valuation reference symbols by asset class
+# Valuation reference symbols by asset class -- methodology/03_fundamentals.md
+# "Settings by Asset Class" table (Phase 4+5 P1 corrections applied):
+#
+#   Forex            : DXY only                     (ROC 10)
+#   Equity Indices   : DXY + 10Y Note + 30Y Bond    (ROC 13/30 dual; P1: DXY ADDED)
+#   Equities (stocks): same as Equity Indices       (per-stock dual-TF gate)
+#   Commodities      : DXY + Gold + 30Y Bond        (ROC 10)
+#   Precious Metals  : DXY + Gold + 30Y Bond        (default; Silver/Copper/Palladium)
+#   Platinum         : DXY + Gold ONLY              (no Bonds -- per spec)
+#                       use VALUATION_REFS_PER_SYMBOL override below
+#   Energies         : DXY + Gold + 30Y Bond        (ROC 10)
+#   Interest Rates   : 10Y Note proxy
+#   Crypto           : DXY only                     (best-effort; spec is sparse)
+#
+# Per-symbol overrides (e.g. Platinum) take precedence over the asset-class
+# default. yfinance tickers used: DX-Y.NYB = DXY, ZN=F = 10Y Note, ZB=F = 30Y Bond,
+# GC=F = Gold (also acts as Silver bonds proxy when @VD isn't available).
 # ---------------------------------------------------------------------------
 VALUATION_REFS = {
     "forex":           ["DX-Y.NYB"],
-    "precious_metals": ["DX-Y.NYB", "ZB=F"],
+    "equity_indices":  ["DX-Y.NYB", "ZN=F", "ZB=F"],
+    "equities":        ["DX-Y.NYB", "ZN=F", "ZB=F"],
+    "commodities":     ["DX-Y.NYB", "GC=F", "ZB=F"],
+    "precious_metals": ["DX-Y.NYB", "GC=F", "ZB=F"],
     "energies":        ["DX-Y.NYB", "GC=F", "ZB=F"],
-    "equity_indices":  ["^TNX", "ZB=F"],
     "interest_rates":  ["^TNX"],
+    "crypto":          ["DX-Y.NYB"],
+}
+
+# Per-symbol overrides where the asset-class default doesn't apply.
+# Per methodology/03_fundamentals.md "Platinum Valuation = DXY + Gold only".
+VALUATION_REFS_PER_SYMBOL = {
+    "PL=F": ["DX-Y.NYB", "GC=F"],   # Platinum: no Bonds
 }
 
 # ---------------------------------------------------------------------------
@@ -383,7 +408,9 @@ def scan_symbol(
     # 3. Fetch valuation reference symbols (cached in DataFetcher across calls,
     #    so the dollar/bond series is downloaded once per scan, not 15 times)
     val_refs: Dict = {}
-    ref_symbols = VALUATION_REFS.get(ac, ["DX-Y.NYB"])
+    # Per-symbol Valuation refs override (e.g. Platinum) takes precedence
+    # over the asset-class default.
+    ref_symbols = VALUATION_REFS_PER_SYMBOL.get(sym) or VALUATION_REFS.get(ac, ["DX-Y.NYB"])
     for ref_sym in ref_symbols:
         ref_df = fetcher.fetch_ohlcv(ref_sym, interval=ltf, period="5y")
         if not ref_df.empty:
@@ -435,9 +462,16 @@ def scan_all_markets(
     """
     scan_start = datetime.now()
 
-    strategy = config.get("active_strategy", "weekly")
-    tf = STRATEGY_TIMEFRAMES.get(strategy, STRATEGY_TIMEFRAMES["weekly"])
-    htf, ltf = tf["htf"], tf["ltf"]
+    # Resolve strategy list. Two ways the user can drive timeframes:
+    #   1. Per-symbol `strategies: ['weekly', 'daily']` field on each
+    #      watchlist entry (highest priority).
+    #   2. Global `default_strategies` list in BP_config.yaml -- applied
+    #      when an entry has no override.
+    #   3. Legacy `active_strategy` (single-pass mode) -- used when both
+    #      of the above are absent.
+    default_strategies = config.get("default_strategies") or [
+        config.get("active_strategy", "weekly")
+    ]
 
     if watchlist is None:
         watchlist = FULL_WATCHLIST
@@ -463,61 +497,80 @@ def scan_all_markets(
     indicators_by_symbol: Dict[str, Dict] = {}
 
     total = len(watchlist)
+    # Total scan passes = sum of strategies-per-symbol (drives ETA + log)
+    total_passes = sum(
+        len(sym.get("strategies") or default_strategies)
+        for sym in watchlist
+    )
     print()
     print(f"{BOLD}{CYAN}{'=' * 60}{RESET}")
     print(f"{BOLD}{CYAN}  Blueprint Market Scanner{RESET}")
-    print(f"{BOLD}{CYAN}  Strategy: {strategy.upper()}  |  HTF: {htf}  |  LTF: {ltf}{RESET}")
+    print(f"{BOLD}{CYAN}  Default strategies: {default_strategies}  |  Total passes: {total_passes}{RESET}")
     print(f"{BOLD}{CYAN}  Watchlist: {total} symbols  |  {scan_start.strftime('%Y-%m-%d %H:%M:%S')}{RESET}")
     print(f"{BOLD}{CYAN}{'=' * 60}{RESET}")
     print()
 
+    pass_idx = 0
     for idx, sym_info in enumerate(watchlist, 1):
         sym  = sym_info["symbol"]
         name = sym_info["name"]
-        progress = f"[{idx}/{total}]"
+        # Per-symbol strategy override -- crypto entries pin to ['daily']
+        symbol_strategies = sym_info.get("strategies") or default_strategies
 
-        print(f"  {DIM}{progress}{RESET}  Scanning {BOLD}{sym}{RESET} ({name})...", end="", flush=True)
+        for strategy in symbol_strategies:
+            pass_idx += 1
+            tf = STRATEGY_TIMEFRAMES.get(strategy, STRATEGY_TIMEFRAMES["weekly"])
+            htf, ltf = tf["htf"], tf["ltf"]
+            progress = f"[{pass_idx}/{total_passes}]"
 
-        try:
-            # Cache OHLCV so the dashboard can chart even without a live API.
-            # Last ~250 bars per timeframe is enough for the lightweight-charts panel.
-            sym = sym_info["symbol"]
-            for tf_label in (htf, ltf):
-                df_tf = fetcher.fetch_ohlcv(
-                    sym,
-                    interval=tf_label,
-                    period="10y" if tf_label in ("1mo", "1wk") else "5y",
-                )
-                if not df_tf.empty:
-                    tail = df_tf.tail(300).copy()
-                    tail["timestamp"] = tail["timestamp"].astype(str)
-                    ohlcv_cache.setdefault(sym, {})[tf_label] = tail.to_dict(orient="records")
+            print(f"  {DIM}{progress}{RESET}  Scanning {BOLD}{sym}{RESET} "
+                  f"({name}) on {strategy} ({htf}/{ltf})...", end="", flush=True)
 
-            scan_out = scan_symbol(sym_info, fetcher, engine, htf, ltf, strategy)
-            signal = scan_out.get("signal")
-            if scan_out.get("indicators"):
-                indicators_by_symbol[sym] = scan_out["indicators"]
+            try:
+                # Cache OHLCV so the dashboard can chart even without a
+                # live API. We dedupe by (symbol, tf_label) so the same
+                # daily series isn't re-fetched on the second strategy pass.
+                for tf_label in (htf, ltf):
+                    if (ohlcv_cache.get(sym) or {}).get(tf_label) is not None:
+                        continue
+                    df_tf = fetcher.fetch_ohlcv(
+                        sym,
+                        interval=tf_label,
+                        period="10y" if tf_label in ("1mo", "1wk") else "5y",
+                    )
+                    if not df_tf.empty:
+                        tail = df_tf.tail(300).copy()
+                        tail["timestamp"] = tail["timestamp"].astype(str)
+                        ohlcv_cache.setdefault(sym, {})[tf_label] = tail.to_dict(orient="records")
 
-            if signal:
-                signals.append(signal)
-                print(f"  {GREEN}SIGNAL: {signal['direction'].upper()}{RESET}")
+                scan_out = scan_symbol(sym_info, fetcher, engine, htf, ltf, strategy)
+                signal = scan_out.get("signal")
+                if scan_out.get("indicators"):
+                    # Last strategy's indicators win for the dashboard panel
+                    indicators_by_symbol[sym] = scan_out["indicators"]
 
-                # Auto paper-trade the signal
-                pos_id = trader.submit_signal(signal)
-                if pos_id:
-                    auto_traded += 1
-                    signal["paper_trade_id"] = pos_id
-                    print(f"           {MAGENTA}-> Paper trade opened: {pos_id}{RESET}")
+                if signal:
+                    # Tag the signal with which timeframe pass produced it
+                    signal["strategy"] = strategy
+                    signals.append(signal)
+                    print(f"  {GREEN}SIGNAL: {signal['direction'].upper()} ({strategy}){RESET}")
+
+                    # Auto paper-trade the signal
+                    pos_id = trader.submit_signal(signal)
+                    if pos_id:
+                        auto_traded += 1
+                        signal["paper_trade_id"] = pos_id
+                        print(f"           {MAGENTA}-> Paper trade opened: {pos_id}{RESET}")
+                    else:
+                        signal["paper_trade_id"] = None
+                        print(f"           {YELLOW}-> Signal valid but paper trade rejected (limits){RESET}")
                 else:
-                    signal["paper_trade_id"] = None
-                    print(f"           {YELLOW}-> Signal valid but paper trade rejected (limits){RESET}")
-            else:
-                print(f"  {DIM}no signal{RESET}")
+                    print(f"  {DIM}no signal{RESET}")
 
-        except Exception as exc:
-            print(f"  {RED}ERROR: {exc}{RESET}")
-            logger.error(f"[{sym}] Scan error: {traceback.format_exc()}")
-            errors.append({"symbol": sym, "error": str(exc)})
+            except Exception as exc:
+                print(f"  {RED}ERROR: {exc}{RESET}")
+                logger.error(f"[{sym}/{strategy}] Scan error: {traceback.format_exc()}")
+                errors.append({"symbol": sym, "strategy": strategy, "error": str(exc)})
 
     scan_end = datetime.now()
     elapsed = (scan_end - scan_start).total_seconds()
