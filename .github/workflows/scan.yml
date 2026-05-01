@@ -100,10 +100,11 @@ for entry in config['watchlist']:
 config['watchlist'] = filtered_watchlist
 
 # Save chunk-specific config
-with open(f'BP_config_chunk_{os.environ["MATRIX_CHUNK_ID"]}.yaml', 'w') as f:
+chunk_id = os.environ.get('MATRIX_CHUNK_ID', '0')
+with open(f'BP_config_chunk_{chunk_id}.yaml', 'w') as f:
     yaml.dump(config, f)
 
-print(f"Chunk {os.environ['MATRIX_CHUNK_ID']}: {len(filtered_watchlist)} symbols")
+print(f"Chunk {chunk_id}: {len(filtered_watchlist)} symbols")
 EOF
         env:
           MATRIX_CHUNK_ID: ${{ matrix.chunk_id }}

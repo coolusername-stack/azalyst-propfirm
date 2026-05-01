@@ -1,23 +1,20 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-.venv/
-venv/
-env/
+```yaml
+name: Dependency Review
+on: [pull_request]
 
-# Local scanner artifacts (only committed when produced by CI)
-scanner/scanner.log
-scanner/.deps_installed
-scanner/__pycache__/
+permissions:
+  contents: read
+  pull-requests: write
 
-# IDE / OS
-.idea/
-.vscode/
-.DS_Store
-Thumbs.db
-
-# GitHub Pages build output
-_site/
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout Repository'
+        uses: actions/checkout@v4
+      - name: 'Dependency Review'
+        uses: actions/dependency-review-action@v3
+        with:
+          comment-summary-in-pr: true
+          fail-on-severity: high
+```
