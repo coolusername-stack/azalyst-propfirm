@@ -823,6 +823,16 @@ class RulesEngine:
 
         bullish = sum(1 for v in normalized.values() if v == 'bullish')
         bearish = sum(1 for v in normalized.values() if v == 'bearish')
+        # Phase 8 H1 fix: trend contributes to bullish/bearish counts
+        # ('uptrend' normalises to 'bullish'). When the safety gate later asks
+        # whether non-trend evidence is strong enough to OVERRIDE the trend,
+        # it needs a tally that excludes the trend itself -- otherwise the
+        # gate's `bullish == 0` clause is mathematically unreachable in any
+        # uptrend and shorts can never fire.
+        bullish_excl_trend = sum(1 for k, v in normalized.items()
+                                 if k != 'trend' and v == 'bullish')
+        bearish_excl_trend = sum(1 for k, v in normalized.items()
+                                 if k != 'trend' and v == 'bearish')
 
         # ---- Stocks: Valuation-driven, long-only path -----------------
         # Per Phase 6 audit + CW42-Idx + monthly roadmap process, Bernd
@@ -864,15 +874,19 @@ class RulesEngine:
             return 'hold'
 
         # Trend safety gate: don't go SHORT in an uptrend or LONG in a downtrend
-        # unless the consensus is overwhelming (4+ same direction with 0 opposing,
-        # i.e. a strong counter-trend reversal signal that beats the trend on its
-        # own merits).
+        # unless non-trend consensus is overwhelming. Old code checked
+        # `bullish == 0` against the full tally -- which INCLUDES the trend
+        # vote -- making the gate unreachable in any uptrend (bullish >= 1
+        # always). Phase 8 H1 fix: check non-trend tally only.
+        # Threshold of 3-of-4 non-trend (was 4-of-5 with trend included)
+        # preserves the original "overwhelming counter-trend signal" intent
+        # without the impossibility bug.
         if candidate == 'bearish' and trend == 'uptrend':
-            if bearish >= 4 and bullish == 0:
+            if bearish_excl_trend >= 3 and bullish_excl_trend == 0:
                 return 'bearish'  # overwhelming counter-trend signal
             return 'hold'
         if candidate == 'bullish' and trend == 'downtrend':
-            if bullish >= 4 and bearish == 0:
+            if bullish_excl_trend >= 3 and bearish_excl_trend == 0:
                 return 'bullish'
             return 'hold'
 
