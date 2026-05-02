@@ -2,8 +2,10 @@ name: Market Scanner (Parallel)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
   schedule:
-    - cron: '0 * * * *' # Runs every hour
+    - cron: '15 * * * *' # Runs 15 mins past every hour to avoid congestion
 
 jobs:
   scan-chunk:
