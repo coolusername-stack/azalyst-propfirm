@@ -171,7 +171,7 @@ This file provides the **EXACT settings** to use for each asset class. Different
 | COT Group | Non-Commercials |
 | COT Method | DIVERGENCE |
 | COT Lookback | 26 weeks |
-| Valuation ROC | 13 (daily); dual: ROC 13 + ROC 10 daily, ROC 13 + ROC 30 weekly — both must agree |
+| Valuation ROC | **10** (Pine Script default `Length=10` per CampusValuationTool source). Dual-ROC is a CHART OVERLAY practice (run two indicator instances at different lengths simultaneously): daily overlay = ROC 10 + ROC 13; weekly overlay = ROC 13 + ROC 30. Both lines must agree direction or signal is neutral. |
 | Valuation References | Interest Rates (ZN / ZB) + Bonds + **DXY** (Dollar Index — YES for equity indices) |
 | Valuation Priority | **PRIMARY / LEADING indicator AND hard prerequisite gate** — "Rule number one: valuation" |
 | Valuation Hard Gate | If Valuation STRONGLY opposes trade direction → VETO regardless of other factors |
@@ -185,7 +185,7 @@ This file provides the **EXACT settings** to use for each asset class. Different
 - **Valuation is the MOST important fundamental** for equities AND is a HARD PREREQUISITE gate. Bernd: "Rule number one — valuation" (CW38, CW39). If Valuation strongly contradicts the proposed direction, the trade is VETOED.
 - **AUDIT CORRECTION**: Equity indices DO use DXY as a Valuation reference. CampusValuationTool_V2 confirmed showing @BUS (bonds) + @GC (Gold) + @$XY (DXY) for AAPL, YMN, and NQ across three separate sessions (CW42-Idx, CW43-Idx, CW51). Previous documentation stating "NO Dollar" was incorrect.
 - COT lookback is shorter for equities: **26 weeks** instead of 52 weeks.
-- Valuation ROC is **13** (not 10). Dual-ROC validation required (both periods must agree).
+- Valuation indicator parameter `Length=10` (Pine Script default per CampusValuationTool source). "Dual-ROC" is a chart-overlay practice — run two separate indicator instances at different lengths and require both to agree direction (daily: 10+13; weekly: 13+30). It is NOT a single-instance parameter override. (Phase 7 audit correction — earlier docs claimed Length=13 for equities; that was a misreading. Empirically validated: AMZN/META/NVDA give wrong-vs-Bernd readings at Length=13; Length=10 matches.)
 - **DOW COT reliability**: Dow Jones COT data is more reliable and less noisy than S&P 500 or Nasdaq COT data. When indices disagree on COT signal, Dow COT carries more weight.
 - Shorter timeframe combinations (Daily HTF / 4H LTF) can be used for more frequent setups, but the weekly/daily combination remains the standard.
 - Equity indices have a natural long-term upward bias — counter-trend (short) trades require MUCH stronger fundamental confirmation. Only short when "really overvalued" (CW18).
@@ -308,7 +308,7 @@ For inverted pairs (6J, 6C, 6S), you must **flip the bias** when translating fro
 | COT Group | Non-Commercials | Commercials + Retailers | Commercials | **Non-Commercials** | Non-Commercials |
 | COT Method | Divergence | With Commercials | With Commercials | **Divergence** | Divergence |
 | COT Lookback | **26 weeks** | 52 weeks | 52 weeks | **26 weeks** | 26 weeks |
-| Valuation ROC | 10 | 10 | 10 | 10 | 13 (dual: +10 or +30) |
+| Valuation ROC | 10 | 10 | 10 | 10 | **10** (dual overlay: 10+13 daily, 13+30 weekly — both must agree) |
 | Valuation Refs | DXY | DXY + ZB + GC | DXY + ZB + GC | DXY + ZB + GC | ZN/ZB + **DXY** |
 | 156-wk Extreme | No | YES | No | No | No |
 | Dollar Reference | YES | YES | YES | YES | **YES** (corrected) |

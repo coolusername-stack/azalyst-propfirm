@@ -188,7 +188,7 @@ Check **ALL THREE** fundamental indicators to build the consensus.
 - Use the correct Rate of Change (ROC) period per asset class:
   - **Forex**: ROC 10, reference DXY
   - **Commodities**: ROC 10, reference DXY + Bonds (ZB) + Gold (GC)
-  - **Equities / Equity Indices**: ROC 13, reference Interest Rates (ZN/ZB) + **DXY** (Dollar Index — confirmed by CampusValuationTool_V2 across CW42-Idx, CW43-Idx, CW51)
+  - **Equities / Equity Indices**: ROC 10 (Pine Script `Length=10` default per CampusValuationTool source), reference Interest Rates (ZN/ZB) + Bonds + **DXY** (Dollar Index — confirmed by CampusValuationTool_V2 across CW42-Idx, CW43-Idx, CW51). **Dual-ROC = chart overlay practice**: run two indicator instances at different lengths (daily: 10+13; weekly: 13+30) and require both to agree direction; it is NOT a parameter override.
   - **Platinum**: ROC 10, reference DXY + Gold (GC) only — no Bonds
   - **Silver**: ROC 10, reference DXY + ZB (@VD ticker) + GC
 - Use the **4-state model**: STRONG BULLISH (≤-75) / MILD BULLISH (0 to -75) / MILD BEARISH (0 to +75) / STRONG BEARISH (≥+75)

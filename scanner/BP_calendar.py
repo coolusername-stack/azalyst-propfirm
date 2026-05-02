@@ -443,6 +443,122 @@ _HIGH_IMPACT_2025: List[CalendarEvent] = [
                   currency="USD", recurring_rule="first_business_day"),
 ]
 
+# ========================================================================
+# FIX Bug 5: 2026 high-impact calendar dates
+# ========================================================================
+_HIGH_IMPACT_2026: List[CalendarEvent] = [
+    # ---- NFP 2026 (first Friday of each month) ----
+    CalendarEvent("Non-Farm Payrolls (NFP)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 1, 9,  _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("Non-Farm Payrolls (NFP)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 2, 6,  _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("Non-Farm Payrolls (NFP)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 3, 6,  _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("Non-Farm Payrolls (NFP)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 4, 3,  _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("Non-Farm Payrolls (NFP)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 5, 1,  _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("Non-Farm Payrolls (NFP)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 6, 5,  _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("Non-Farm Payrolls (NFP)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 7, 2,  _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("Non-Farm Payrolls (NFP)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 8, 7,  _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("Non-Farm Payrolls (NFP)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 9, 4,  _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("Non-Farm Payrolls (NFP)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 10, 2, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("Non-Farm Payrolls (NFP)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 11, 6, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("Non-Farm Payrolls (NFP)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 12, 4, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    # ---- CPI 2026 ----
+    CalendarEvent("CPI (Consumer Price Index)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 1, 14, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("CPI (Consumer Price Index)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 2, 11, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("CPI (Consumer Price Index)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 3, 11, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("CPI (Consumer Price Index)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 4, 15, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("CPI (Consumer Price Index)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 5, 13, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("CPI (Consumer Price Index)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 6, 10, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("CPI (Consumer Price Index)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 7, 15, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("CPI (Consumer Price Index)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 8, 12, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("CPI (Consumer Price Index)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 9, 9,  _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("CPI (Consumer Price Index)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 10, 14, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("CPI (Consumer Price Index)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 11, 12, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("CPI (Consumer Price Index)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 12, 9, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    # ---- FOMC 2026 (8 meetings, Wednesdays 19:00 UTC) ----
+    CalendarEvent("FOMC Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 1, 28, 19, 0), duration_minutes=180, currency="USD"),
+    CalendarEvent("FOMC Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 3, 18, 19, 0), duration_minutes=180, currency="USD"),
+    CalendarEvent("FOMC Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 5, 6,  19, 0), duration_minutes=180, currency="USD"),
+    CalendarEvent("FOMC Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 6, 17, 19, 0), duration_minutes=180, currency="USD"),
+    CalendarEvent("FOMC Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 7, 29, 19, 0), duration_minutes=180, currency="USD"),
+    CalendarEvent("FOMC Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 9, 16, 19, 0), duration_minutes=180, currency="USD"),
+    CalendarEvent("FOMC Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 11, 4, 19, 0), duration_minutes=180, currency="USD"),
+    CalendarEvent("FOMC Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 12, 16, 19, 0), duration_minutes=180, currency="USD"),
+    # ---- ECB 2026 (every ~6 weeks, Thursdays 13:15 UTC) ----
+    CalendarEvent("ECB Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 1, 22, 13, 15), duration_minutes=180, currency="EUR"),
+    CalendarEvent("ECB Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 3, 5,  13, 15), duration_minutes=180, currency="EUR"),
+    CalendarEvent("ECB Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 4, 16, 13, 15), duration_minutes=180, currency="EUR"),
+    CalendarEvent("ECB Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 6, 4,  13, 15), duration_minutes=180, currency="EUR"),
+    CalendarEvent("ECB Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 7, 23, 13, 15), duration_minutes=180, currency="EUR"),
+    CalendarEvent("ECB Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 9, 10, 13, 15), duration_minutes=180, currency="EUR"),
+    CalendarEvent("ECB Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 10, 22, 13, 15), duration_minutes=180, currency="EUR"),
+    CalendarEvent("ECB Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 12, 10, 13, 15), duration_minutes=180, currency="EUR"),
+    # ---- BoE 2026 (every ~6 weeks, Thursdays 12:00 UTC) ----
+    CalendarEvent("BoE Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 2, 5,  12, 0), duration_minutes=180, currency="GBP"),
+    CalendarEvent("BoE Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 3, 19, 12, 0), duration_minutes=180, currency="GBP"),
+    CalendarEvent("BoE Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 5, 7,  12, 0), duration_minutes=180, currency="GBP"),
+    CalendarEvent("BoE Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 6, 18, 12, 0), duration_minutes=180, currency="GBP"),
+    CalendarEvent("BoE Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 8, 6,  12, 0), duration_minutes=180, currency="GBP"),
+    CalendarEvent("BoE Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 9, 17, 12, 0), duration_minutes=180, currency="GBP"),
+    CalendarEvent("BoE Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 11, 5, 12, 0), duration_minutes=180, currency="GBP"),
+    CalendarEvent("BoE Rate Decision", EventType.CENTRAL_BANK, EventImpact.HIGH,
+                  datetime(2026, 12, 17, 12, 0), duration_minutes=180, currency="GBP"),
+    # ---- GDP 2026 (quarterly, ~end of Jan/Apr/Jul/Oct) ----
+    CalendarEvent("GDP (Quarterly Advance)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 1, 29, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("GDP (Quarterly Advance)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 4, 29, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("GDP (Quarterly Advance)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 7, 29, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+    CalendarEvent("GDP (Quarterly Advance)", EventType.ECONOMIC, EventImpact.HIGH,
+                  datetime(2026, 10, 28, _et(8,30).hour, _et(8,30).minute), currency="USD"),
+]
+
 
 # ========================================================================
 # US Federal Holidays (market closed) — 2025
@@ -466,6 +582,20 @@ _US_FEDERAL_HOLIDAYS_2025: List[Tuple[date, str, bool]] = [
     (date(2025, 9, 1),   "Labor Day",                True),
     (date(2025, 11, 27), "Thanksgiving",             True),   # closed Thu + early close Fri
     (date(2025, 12, 25), "Christmas",                True),
+]
+
+# FIX Bug 5: 2026 US federal holidays
+_US_FEDERAL_HOLIDAYS_2026: List[Tuple[date, str, bool]] = [
+    (date(2026, 1, 1),   "New Year's Day",           True),
+    (date(2026, 1, 19),  "Martin Luther King Jr Day", True),
+    (date(2026, 2, 16),  "Presidents' Day",           True),
+    (date(2026, 4, 3),   "Good Friday",               True),
+    (date(2026, 5, 25),  "Memorial Day",              True),
+    (date(2026, 6, 19),  "Juneteenth",                True),
+    (date(2026, 7, 3),   "Independence Day (observed)",True),
+    (date(2026, 9, 7),   "Labor Day",                 True),
+    (date(2026, 11, 26), "Thanksgiving",              True),
+    (date(2026, 12, 25), "Christmas",                 True),
 ]
 
 # Thanksgiving week = Monday-Wednesday before Thanksgiving (thin liquidity, COT suppressed)
@@ -509,13 +639,13 @@ class EconomicCalendar:
         if self._loaded:
             return
 
-        # High-impact events
-        for e in _HIGH_IMPACT_2025:
+        # High-impact events (2025 + 2026)
+        for e in _HIGH_IMPACT_2025 + _HIGH_IMPACT_2026:
             e.duration_minutes = self.blackout_minutes
             self._events.append(e)
 
-        # Holidays
-        for d, name, closed in _US_FEDERAL_HOLIDAYS_2025:
+        # Holidays (2025 + 2026)
+        for d, name, closed in _US_FEDERAL_HOLIDAYS_2025 + _US_FEDERAL_HOLIDAYS_2026:
             if closed:
                 self._holidays[d] = name
 
@@ -660,9 +790,11 @@ class EconomicCalendar:
             return True
 
         # Christmas/New Year window: Dec 20 - Jan 2
-        xmas_start = date(d.year, 12, 20)
-        xmas_end = date(d.year + 1, 1, 2)
-        if d >= xmas_start or d <= xmas_end:
+        # FIX Bug 4: original used `or` so matched nearly every date of year.
+        # Split into two clean half-window checks instead.
+        if d.month == 12 and d.day >= 20:
+            return True
+        if d.month == 1 and d.day <= 2:
             return True
 
         return False

@@ -90,6 +90,12 @@ class ZoneDetector:
             return []
 
         df = df.copy().reset_index(drop=True)
+        # FIX Bug 1+6: pandas 2.x hangs in iterrows() when the DataFrame
+        # contains a tz-aware DatetimeTZDtype column (the 'timestamp' col
+        # added by _fetch_one's reset_index). Convert to plain string here
+        # so every slice downstream is safe to iterate.
+        if 'timestamp' in df.columns:
+            df['timestamp'] = df['timestamp'].astype(str)
         zones = []
 
         # Calculate candle properties
@@ -263,9 +269,17 @@ class ZoneDetector:
             if n_candles > self.base_max:
                 return best_end if best_end is not None else start
 
-            # Vectorized: All base candles must be indecisive (body <= 50% of range)
-            body_ratios = base_slice['body'] / base_slice['range'].replace(0, np.nan)
-            if (body_ratios <= 0.50).all():
+            # All base candles must be indecisive (body <= 50% of range)
+            # Vectorized: avoids iterrows() tz-datetime hang (Bug 1 fix)
+            valid = base_slice['range'] > 0
+            if valid.any():
+                all_indecisive = not (
+                    (base_slice.loc[valid, 'body'] / base_slice.loc[valid, 'range']) > 0.50
+                ).any()
+            else:
+                all_indecisive = True
+
+            if all_indecisive:
                 best_end = end
 
         return best_end
@@ -421,15 +435,13 @@ class ZoneDetector:
         q5_failed_gate = (with_trend is False and profit_score == 0.0)
 
         # Q6: Arrival -- same trend-context rule. Skipped on trend trades.
-        return_slice = df.iloc[zone['leg_out_end']:]
+        # Vectorized: avoids iterrows() tz-datetime hang (Bug 6 fix)
+        _return_slice = df.iloc[zone['leg_out_end']:]
         if zone_type == 'demand':
-            # Find first bar where low <= proximal
-            below_proximal = return_slice['low'] <= proximal
-            bars_to_return = int(below_proximal.idxmax() - return_slice.index[0]) if below_proximal.any() else len(return_slice)
+            _hit = _return_slice['low'] <= proximal
         else:
-            # Find first bar where high >= proximal
-            above_proximal = return_slice['high'] >= proximal
-            bars_to_return = int(above_proximal.idxmax() - return_slice.index[0]) if above_proximal.any() else len(return_slice)
+            _hit = _return_slice['high'] >= proximal
+        bars_to_return = int(_hit.argmax()) + 1 if _hit.any() else len(_return_slice)
 
         if with_trend is True:
             arrival_score = 10.0  # Skip Q6 on trend trades
@@ -536,13 +548,12 @@ class ZoneDetector:
             proximal = min(base_slice[['open', 'close']].min(axis=1))
             distal = max(base_slice['high'].max(), leg_out_slice['high'].max())
 
+        # Vectorized: avoids iterrows() tz-datetime hang
         after_origin = df.iloc[origin_idx + 1:]
         if zone_type == 'demand':
-            in_zone = (after_origin['low'] <= proximal) & (after_origin['low'] >= distal)
-            retests = int(in_zone.sum())
+            retests = int(((after_origin['low'] <= proximal) & (after_origin['low'] >= distal)).sum())
         else:
-            in_zone = (after_origin['high'] >= proximal) & (after_origin['high'] <= distal)
-            retests = int(in_zone.sum())
+            retests = int(((after_origin['high'] >= proximal) & (after_origin['high'] <= distal)).sum())
         return retests
 
     def _count_retests_split(
@@ -569,41 +580,34 @@ class ZoneDetector:
         leg_out_slice = df.iloc[zone['leg_out_start']:zone['leg_out_end'] + 1]
 
         if zone_type == 'demand':
-            preferred = float(max(base_slice[['open', 'close']].max(axis=1)))   # body-extreme high
-            wider     = float(min(base_slice['low'].min(), leg_out_slice['low'].min()))  # wick distal
+            preferred = max(base_slice[['open', 'close']].max(axis=1))   # body-extreme high
+            wider     = min(base_slice['low'].min(), leg_out_slice['low'].min())  # wick distal
         else:
-            preferred = float(min(base_slice[['open', 'close']].min(axis=1)))
-            wider     = float(max(base_slice['high'].max(), leg_out_slice['high'].max()))
+            preferred = min(base_slice[['open', 'close']].min(axis=1))
+            wider     = max(base_slice['high'].max(), leg_out_slice['high'].max())
 
-        after = df.iloc[origin_idx + 1:].copy()
-        
+        # Vectorized: avoids iterrows() tz-datetime hang
+        after = df.iloc[origin_idx + 1:]
+        wider_hits = 0
+        preferred_hits = 0
         if zone_type == 'demand':
-            # Vectorized: check which bars have low in [wider, preferred] range
             in_wider = (after['low'] <= preferred) & (after['low'] >= wider)
-            below_preferred = after['low'] < preferred
-            deep_close = after['close'] < preferred
-            deep_low = after['low'] < (preferred - 0.25 * abs(preferred - wider))
-            
-            # Preferred hits: below preferred AND (deep close OR deep low)
-            preferred_hits = int((in_wider & below_preferred & (deep_close | deep_low)).sum())
-            # Wider hits: in wider but NOT preferred
-            wider_hits = int((in_wider & ~below_preferred).sum())
-            # Also count wider hits for those below preferred but not deep enough
-            wider_hits += int((in_wider & below_preferred & ~(deep_close | deep_low)).sum())
+            deep = in_wider & (after['low'] < preferred)
+            deep_pref = deep & (
+                (after['close'] < preferred) |
+                (after['low'] < (preferred - 0.25 * abs(preferred - wider)))
+            )
+            preferred_hits = int(deep_pref.sum())
+            wider_hits = int((in_wider & ~deep_pref).sum())
         else:
-            # Vectorized for supply zones
             in_wider = (after['high'] >= preferred) & (after['high'] <= wider)
-            above_preferred = after['high'] > preferred
-            deep_close = after['close'] > preferred
-            deep_high = after['high'] > (preferred + 0.25 * abs(preferred - wider))
-            
-            # Preferred hits: above preferred AND (deep close OR deep high)
-            preferred_hits = int((in_wider & above_preferred & (deep_close | deep_high)).sum())
-            # Wider hits: in wider but NOT above preferred
-            wider_hits = int((in_wider & ~above_preferred).sum())
-            # Also count wider hits for those above preferred but not deep enough
-            wider_hits += int((in_wider & above_preferred & ~(deep_close | deep_high)).sum())
-        
+            deep = in_wider & (after['high'] > preferred)
+            deep_pref = deep & (
+                (after['close'] > preferred) |
+                (after['high'] > (preferred + 0.25 * abs(preferred - wider)))
+            )
+            preferred_hits = int(deep_pref.sum())
+            wider_hits = int((in_wider & ~deep_pref).sum())
         return wider_hits, preferred_hits
 
     def rank_zones(self, zones: List[Dict], min_score: float = 5.0) -> List[Dict]:
