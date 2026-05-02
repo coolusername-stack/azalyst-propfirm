@@ -71,10 +71,17 @@ jobs:
       - name: Merge Results
         run: |
           cd scanner
-          python merge_results.py --input-dir ../downloaded_chunks --output-file final_scan_results.json
+          python merge_results.py --input-dir ../downloaded_chunks --output-file ../data/scan_results.json --config BP_config.yaml
+
+      - name: Send Discord Notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          cd scanner
+          python send_discord.py --always-send
 
       - name: Upload Final Result
         uses: actions/upload-artifact@v4
         with:
           name: final-scan-results
-          path: scanner/final_scan_results.json
+          path: data/scan_results.json
