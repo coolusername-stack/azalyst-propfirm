@@ -3,7 +3,7 @@ name: Market Scanner (Parallel)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */4 * * 1-5' # Runs every 4 hours on weekdays
+    - cron: '0 * * * *' # Runs every hour
 
 jobs:
   scan-chunk:
