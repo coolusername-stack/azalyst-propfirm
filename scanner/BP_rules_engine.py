@@ -39,13 +39,22 @@ COT_LOOKBACK_BY_CLASS = {
     'interest_rates':  26,
 }
 
+# Pine Script (CampusValuationTool) default Length is 10 across the board.
+# A previous version of these docs claimed equities should use 13 ("Dual-ROC
+# for Equities"), but the Pine Script source the user shared confirms the
+# indicator runs ONE ROC at the default Length=10 -- "dual-ROC" was an
+# overlay practice (running two instances of the indicator on the same
+# chart with different Length values), not a parameter override on a
+# single instance. Tested: with Length=13 our values for META/NVDA/AMZN
+# came out wildly more bearish than Bernd's verbal reading; Length=10
+# produced readings consistent with his commentary.
 VALUATION_LENGTH_BY_CLASS = {
     'forex':           10,
     'commodities':     10,
     'energies':        10,
     'precious_metals': 10,
-    'equity_indices':  13,
-    'equities':        13,
+    'equity_indices':  10,
+    'equities':        10,
     'interest_rates':  10,
 }
 
@@ -177,7 +186,7 @@ class RulesEngine:
             'seasonality': fund_bias['seasonality']
         }
 
-        consensus = self._bias_consensus(biases, income_strategy)
+        consensus = self._bias_consensus(biases, income_strategy, asset_class=asset_class)
         if consensus == 'hold':
             logger.info(f"[{symbol}] Bias consensus insufficient for trade")
             return None
@@ -202,20 +211,32 @@ class RulesEngine:
                 return None
 
         # OTC L5 Decision Matrix (frames 57, 1484): Action = f(zone_type, location, trend)
-        # The decision matrix hard-rejects setups that fall in "No Action" cells.
+        # The matrix labels "demand-at-expensive" and "supply-at-cheap" as
+        # ANTICIPATORY / COUNTER-TREND setups. Per Hybrid AI Module 4 these
+        # are still tradeable -- just with reduced size (0.5% risk) and
+        # stronger Valuation alignment required. So we hard-reject only
+        # when Valuation does NOT explicitly agree with the zone direction;
+        # otherwise we allow the trade and mark it as anticipatory below.
         location  = ht_bias['location']
         in_equil  = ht_bias.get('in_equilibrium', False)
         zone_type = best_zone['zone_type']
+        val_bias  = fund_bias.get('valuation', 'neutral')
 
-        # Demand high/very-high (location bearish) = NO ACTION
+        # Demand zone at expensive location: needs Valuation bullish to fire
         if zone_type == 'demand' and location == 'bearish':
-            logger.info(f"[{symbol}] Decision matrix: demand zone at expensive location -> no action")
-            return None
-        # Supply low/very-low (location bullish) = NO ACTION
+            if val_bias != 'bullish':
+                logger.info(f"[{symbol}] Decision matrix: demand at expensive location AND Val not bullish -> no action")
+                return None
+            logger.info(f"[{symbol}] Anticipatory reversal: demand at expensive + Val bullish (reduced size)")
+
+        # Supply zone at cheap location: needs Valuation bearish to fire
         if zone_type == 'supply' and location == 'bullish':
-            logger.info(f"[{symbol}] Decision matrix: supply zone at cheap location -> no action")
-            return None
-        # Equilibrium + sideways trend on either zone = NO ACTION
+            if val_bias != 'bearish':
+                logger.info(f"[{symbol}] Decision matrix: supply at cheap location AND Val not bearish -> no action")
+                return None
+            logger.info(f"[{symbol}] Anticipatory reversal: supply at cheap + Val bearish (reduced size)")
+
+        # Equilibrium + sideways trend on either zone = genuinely no edge
         if in_equil and trend == 'sideways':
             logger.info(f"[{symbol}] Decision matrix: equilibrium + sideways -> no edge, skip")
             return None
@@ -731,14 +752,16 @@ class RulesEngine:
 
         Returns (allowed, reason).
         """
-        # 1. Retailer extreme check via COT (Retailers / Small Specs)
+        # FIX Bug 3: COTIndex.calculate is an INSTANCE method, not a static.
+        # The original code called COTIndex.calculate(cot_df, lookback_weeks=26, group='retailers')
+        # which raises TypeError. Build a proper instance and call it correctly.
         retailers_extreme = False
         if cot_df is not None and not cot_df.empty:
             from BP_indicators import COTIndex
-            cot_calc = COTIndex.calculate(cot_df, lookback_weeks=26, group='retailers')
-            if not cot_calc.empty and 'index' in cot_calc.columns:
-                latest = cot_calc['index'].iloc[-1]
-                # retailers loaded LONG = dumb money on wrong side of an equity short
+            _cot_engine = COTIndex(lookback_weeks=26, upper_extreme=80, lower_extreme=20)
+            cot_calc = _cot_engine.calculate(cot_df)
+            if not cot_calc.empty and 'small_specs_index' in cot_calc.columns:
+                latest = cot_calc['small_specs_index'].iloc[-1]
                 retailers_extreme = bool(latest >= 80)
 
         # 2. Bond ROC rolling-over check
@@ -763,26 +786,97 @@ class RulesEngine:
             return False, "WAIT -- bonds rolling over but retailers not yet extreme"
         return False, "VETO -- neither retailer-extreme nor bond-rollover signals active"
 
-    def _bias_consensus(self, biases: Dict[str, str], income_strategy: str) -> str:
-        """Synthesize all 5 biases into a final directional call.
+    def _bias_consensus(
+        self, biases: Dict[str, str], income_strategy: str,
+        asset_class: Optional[str] = None,
+    ) -> str:
+        """Synthesize biases into a final directional call.
 
-        Per the Blueprint methodology, a trade requires 3 of 5 in agreement
-        (Location, Trend, COT, Valuation, Seasonality) AND no opposing votes
-        on the directional indicators -- otherwise hold.
+        For futures (5 votes available — Location, Trend, COT, Valuation,
+        Seasonality), the textbook 3-of-5 rule applies.
+
+        For individual stocks (no CFTC COT data, and Bernd's monthly
+        roadmaps treat stocks as Valuation-driven per Phase 6 audit),
+        Valuation is the primary driver and we never short stocks
+        directly. Bernd: "if valuation is undervalued, look for a demand
+        zone to buy" — Location/Fib position is NOT part of his stock
+        decision tree the way it is for futures.
         """
-        bullish = sum(1 for v in biases.values() if v == 'bullish')
-        bearish = sum(1 for v in biases.values() if v == 'bearish')
+        val = biases.get('valuation', 'neutral')
+        trend = biases.get('trend', 'sideways')
 
+        # Normalise trend's vocabulary ('uptrend'/'downtrend'/'sideways')
+        # to the consensus vocabulary ('bullish'/'bearish'/'neutral').
+        # This was a silent bug: the trend vote was being ignored entirely
+        # because it never matched the literal 'bullish'/'bearish' strings,
+        # so what looked like a 5-vote rule was effectively a 4-vote rule.
+        normalized = {}
+        for k, v in biases.items():
+            if v == 'uptrend':
+                normalized[k] = 'bullish'
+            elif v == 'downtrend':
+                normalized[k] = 'bearish'
+            elif v == 'sideways':
+                normalized[k] = 'neutral'
+            else:
+                normalized[k] = v
+
+        bullish = sum(1 for v in normalized.values() if v == 'bullish')
+        bearish = sum(1 for v in normalized.values() if v == 'bearish')
+
+        # ---- Stocks: Valuation-driven, long-only path -----------------
+        # Per Phase 6 audit + CW42-Idx + monthly roadmap process, Bernd
+        # treats individual stocks differently from futures:
+        #   - NEVER short individual stocks (he uses index futures for that)
+        #   - Long when Valuation undervalued, regardless of Fib location
+        #   - Trend must not strongly contradict (no longs in clear
+        #     downtrend on the analyzed timeframe)
+        if asset_class == 'equities':
+            if val == 'bullish' and trend != 'downtrend':
+                return 'bullish'
+            return 'hold'
+
+        # ---- Futures: standard 3-of-N consensus ------------------------
+        # SAFETY GATE for prop firm trading: never fire counter-trend signals.
+        # Fighting the prevailing trend is the fastest way to blow a daily-loss
+        # limit. Bernd does take counter-trend "anticipatory" setups but only
+        # with extreme-conviction signals (e.g. fresh 156w COT extreme + zone
+        # at extreme location); a mechanical 3-of-5 is not enough to justify
+        # fighting the trend on a $100k prop account.
+        candidate = None
         if bullish >= 3 and bearish == 0:
-            return 'bullish'
-        if bearish >= 3 and bullish == 0:
-            return 'bearish'
-        # Allow 3 vs 1 in same direction (one indicator disagrees)
-        if bullish >= 3 and bullish > bearish:
-            return 'bullish'
-        if bearish >= 3 and bearish > bullish:
-            return 'bearish'
-        return 'hold'
+            candidate = 'bullish'
+        elif bearish >= 3 and bullish == 0:
+            candidate = 'bearish'
+        elif bullish >= 3 and bullish > bearish:
+            candidate = 'bullish'
+        elif bearish >= 3 and bearish > bullish:
+            candidate = 'bearish'
+
+        # Soft path: Valuation strongly aligned + 1 supporting vote
+        if candidate is None:
+            if val == 'bullish' and bearish == 0 and bullish >= 2:
+                candidate = 'bullish'
+            elif val == 'bearish' and bullish == 0 and bearish >= 2:
+                candidate = 'bearish'
+
+        if candidate is None:
+            return 'hold'
+
+        # Trend safety gate: don't go SHORT in an uptrend or LONG in a downtrend
+        # unless the consensus is overwhelming (4+ same direction with 0 opposing,
+        # i.e. a strong counter-trend reversal signal that beats the trend on its
+        # own merits).
+        if candidate == 'bearish' and trend == 'uptrend':
+            if bearish >= 4 and bullish == 0:
+                return 'bearish'  # overwhelming counter-trend signal
+            return 'hold'
+        if candidate == 'bullish' and trend == 'downtrend':
+            if bullish >= 4 and bearish == 0:
+                return 'bullish'
+            return 'hold'
+
+        return candidate
 
     def _check_entry_pattern(self, df: pd.DataFrame, zone: Dict) -> Optional[Dict]:
         """Step 5: Check for candlestick pattern at the zone."""

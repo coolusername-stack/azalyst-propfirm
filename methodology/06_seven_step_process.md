@@ -215,16 +215,22 @@ Before counting votes, check the Valuation reading against the proposed trade di
 Count the biases from all five inputs:
 
 1. **Location** (from Step 2)
-2. **Trend** (from Step 2)
+2. **Trend** (from Step 2) — `uptrend` counts as bullish, `downtrend` as bearish, `sideways` as neutral
 3. **COT** (from Step 3)
 4. **Valuation** (from Step 3)
 5. **Seasonality** (from Step 3)
 
-**At least 3 out of 5 biases must align in the same direction.**
+**At least 3 out of 5 biases must align in the same direction with no opposing votes** (or majority dominance: 3+ same direction must outnumber any opposing).
 
 Counter-trend or anticipatory setups require **4 out of 5**.
 
 If fewer than 3 align → **NO TRADE**. Move to the next instrument.
+
+**Soft path for Valuation-driven theses**: when only 2 fundamentals fire but Valuation is one of them and there are zero opposing votes, the bias still passes (mild conviction). This catches Bernd's monthly-roadmap reasoning where Valuation is the primary driver and only Trend or Seasonality co-confirms.
+
+**Trend safety gate (prop-firm protection)**: never fire SHORT in an uptrend or LONG in a downtrend unless the consensus is overwhelming (4+ same-direction votes with 0 opposing). Fighting the prevailing trend is the fastest way to blow a daily-loss limit on a $5k/$10k prop account, even when the analytical case looks compelling. Bernd does take counter-trend "anticipatory" setups but only with extreme-conviction signals (e.g. fresh 156w COT extreme + zone at extreme location); a mechanical 3/5 vote is not enough to justify it on a real prop account.
+
+**Asset-class-specific consensus for individual stocks**: stocks (AAPL, MSFT, GOOG, META, AMZN, NFLX, TSLA, NVDA) have NO CFTC COT report — the COT vote is permanently neutral, making the standard 3/5 mathematically harder. Per Phase 6 audit + monthly-roadmap analysis, Bernd's stock-trading process is **Valuation-driven**: if Valuation is undervalued AND the stock-level trend isn't strongly down, take long. **Individual stocks are NEVER shorted directly** — Bernd shorts indices via futures (ES, NQ, YM), not single names. Implementation: `_bias_consensus(asset_class='equities')` branches to a Valuation-only path that allows long when Val=bullish + Trend ≠ downtrend, and never returns 'bearish'.
 
 ### Special Gates for Equity Stocks (beyond indices)
 

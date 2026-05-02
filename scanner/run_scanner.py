@@ -409,16 +409,24 @@ def scan_symbol(
 
     # 3. Fetch valuation reference symbols (cached in DataFetcher across calls,
     #    so the dollar/bond series is downloaded once per scan, not 15 times)
+    # CRITICAL (Phase 7 fix, 2026-05-02): refs MUST match the HTF interval.
+    # _analyze_fundamentals feeds the symbol's HTF data into Valuation.calculate;
+    # if refs are at a different interval, the index intersection is too small
+    # and the indicator silently returns 'neutral' for every symbol.
     val_refs: Dict = {}
     # Per-symbol Valuation refs override (e.g. Platinum) takes precedence
     # over the asset-class default.
     ref_symbols = VALUATION_REFS_PER_SYMBOL.get(sym) or VALUATION_REFS.get(ac, ["DX-Y.NYB"])
     for ref_sym in ref_symbols:
-        # yfinance only provides 1h data for the last 730 days (2 years).
-        # We must use 2y instead of 5y for the LTF pass.
-        # 729d keeps us safely inside Yahoo's 730-day intraday limit
-        ref_period = "729d" if ltf in ("60m", "30m", "15m", "5m", "1m") else "5y"
-        ref_df = fetcher.fetch_ohlcv(ref_sym, interval=ltf, period=ref_period)
+        # Match window to HTF: monthly/weekly need years of bars; daily 5y;
+        # intraday capped at 729d (Yahoo limit on 1h data).
+        if htf in ("1mo", "1wk"):
+            ref_period = "10y"
+        elif htf == "1d":
+            ref_period = "5y"
+        else:
+            ref_period = "729d"
+        ref_df = fetcher.fetch_ohlcv(ref_sym, interval=htf, period=ref_period)
         if not ref_df.empty:
             val_refs[ref_sym] = ref_df
 

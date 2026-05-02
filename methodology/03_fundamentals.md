@@ -394,15 +394,27 @@ def valuation_score(asset_roc, reference_rocs):
 | Asset Class | Reference Benchmarks | ROC Period | Special Notes |
 |-------------|---------------------|------------|---------------|
 | **Forex** | DXY (Dollar Index) only | 10 | Compare currency vs Dollar strength |
-| **Stocks / Equity Indices** | Interest Rates (ZN/ZB) + Bonds + **DXY** | 13 | Valuation is the PRIMARY/LEADING indicator for stocks. Confirmed: CampusValuationTool_V2 shows DXY (@$XY) for AAPL, YM, NQ (CW42-Idx, CW43-Idx, CW51) |
+| **Stocks / Equity Indices** | Interest Rates (ZN/ZB) + Bonds + **DXY** | 10 | Valuation is the PRIMARY/LEADING indicator for stocks. Confirmed: CampusValuationTool_V2 shows DXY (@$XY) for AAPL, YM, NQ (CW42-Idx, CW43-Idx, CW51) |
 | **Commodities** | DXY + Gold (GC) + Bonds (ZB) | 10 | All three references used |
 | **Platinum** | DXY + Gold (GC) only | 10 | No Bonds reference for Platinum |
 | **Silver** | DXY + ZB (Bonds) + GC (Gold) | 10 | Bonds ticker = @VD not @US |
 
-**Dual-ROC for Equities**:
-- Daily chart: ROC 13 + ROC 10 — BOTH must agree direction for valid signal
-- Weekly chart: ROC 13 + ROC 30 — BOTH must agree direction for valid signal
+**Pine Script default `Length=10` across ALL asset classes** (CampusValuationTool source confirmed via Phase 7 audit). A previous version of these docs claimed Length=13 for equities — that was a misreading of "Dual-ROC", which referred to running two instances of the indicator with different lengths simultaneously, NOT changing the parameter on a single instance. Empirically validated: AMZN/META/NVDA give wildly different (and incorrect-vs-Bernd's commentary) readings with Length=13; Length=10 matches.
+
+**Dual-ROC for Equities (overlay practice, NOT a parameter override)**:
+- Daily chart: overlay ROC 10 + ROC 13 — BOTH must agree direction for valid signal
+- Weekly chart: overlay ROC 13 + ROC 30 — BOTH must agree direction for valid signal
 - If mixed (one bullish, one bearish) → treat as NEUTRAL
+- Implementation note: each ROC is a separate instance of the Valuation indicator on the chart; the `Length` parameter on each instance stays at the configured value, the overlay is applied at the chart level
+
+**Read 3 INDIVIDUAL LINES, never a composite average** (Pine Script source `Valuation_v4.pine`): the indicator plots one line per reference benchmark. Bernd reads each separately ("DXY line is undervalued, bond line is undervalued, gold line is mild → all 3 agree, strong bullish bias"). Do NOT average them into one composite — that loses the per-reference signal. Aggregate rule:
+
+| Pattern across 3 lines | Bias | Strength |
+|------------------------|------|----------|
+| All 3 in extreme zone (≥+75 or ≤-75) same direction | direction | strong |
+| All 3 in mild zone same direction | direction | mild |
+| 2 of 3 same direction, 0 opposing | direction | mild (or strong if any of the 2 is in extreme zone) |
+| Mixed / 1 of 3 / lines disagree | neutral | none |
 
 **Valuation is a HARD DIRECTIONAL PREREQUISITE — "Rule Number One"** (verbatim Bernd, CW38 and CW39). Directional trades require Valuation to NOT strongly contradict the trade direction. This is not just a vote — it is a prerequisite gate that MUST be cleared before the 3/5 vote counts.
 

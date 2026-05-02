@@ -132,6 +132,15 @@ python run_scanner.py --ci       # CI-style: writes data/, no server, no browser
 
 This section documents every gate the system passes through, with citations to the methodology spec (so a Bernd-trained trader can verify it and so a future AI agent can trace the decision logic).
 
+### Two-stage signal pipeline (CRITICAL to understand)
+
+The engine has two distinct stages and the audit harness measures both:
+
+- **Stage 1 — Directional bias**: `_analyze_htf` + `_analyze_fundamentals` + `_bias_consensus` produce a directional thesis (bullish / bearish / hold). This is the "analytical brain" — what Bernd's monthly-roadmap calls express ("buy AAPL because undervalued").
+- **Stage 2 — Trade trigger**: bias + zone direction match + decision matrix + zone-arrival check + entry-pattern check → real trade signal. This is execution timing.
+
+Bernd's monthly-roadmap commentary is typically Stage 1 thesis, NOT "execute right now". The system correctly waits at Stage 2 for price to arrive at a zone (rule #4: never anticipate). On the gold-standard test harness (in `Propfirm Trading Dashboard/goldtest/run_goldtest.py`), `bias_match` measures Stage 2 and `bias_only_match` measures Stage 1 — both are reported, and `Full-signal false positives` is the prop-firm-safety metric (must stay at 0).
+
 ### Data sources (per scan)
 
 | Source | Provides | Used for | Spec |
@@ -184,8 +193,18 @@ This section documents every gate the system passes through, with citations to t
 │        Platinum         : DXY + Gold ONLY (no Bonds)                   │
 │        Energies         : DXY + Gold + ZB                              │
 │        Crypto           : DXY only                                     │
-│      ROC: 10 default, 13 equities, per-symbol override                 │
-│      Bias = composite vs 4-state thresholds (±75)                      │
+│      ROC: 10 across ALL asset classes (Pine Script default,            │
+│           Phase 7 correction; "Dual-ROC for Equities" is an OVERLAY    │
+│           practice on the chart, NOT a parameter override)             │
+│      REFS FETCHED AT HTF interval (Phase 7 critical fix — was at LTF   │
+│           which made date intersection too small for ROC, indicator    │
+│           returned NaN for every symbol)                               │
+│      Bias = read 3 INDIVIDUAL lines per Pine Script source, NOT a      │
+│           composite average (Phase 7 fix). 4-state per line:           │
+│           ≥+75 strong bearish · ≥+10 mild bearish ·                    │
+│           ≤-10 mild bullish · ≤-75 strong bullish · else neutral       │
+│      Aggregate: all 3 agree → that direction (strong if any extreme); │
+│           2-of-3 with 0 opposing → that direction (mild); else neutral │
 │  (e) Seasonality multi-lookback 5y/10y/15y:                            │
 │      All three must AGREE. Slope must actively TURN (not just be       │
 │      positive). Strength tier: strong/moderate/none.                   │
@@ -195,10 +214,32 @@ This section documents every gate the system passes through, with citations to t
 ┌─── BIAS SYNTHESIS RULE (HARD GATES) ──────────────────────────────────┐
 │  (1) Valuation HARD PREREQUISITE GATE ("Rule Number One"):            │
 │      strongly opposing direction → VETO                                │
-│  (2) 3/5 vote (Location, Trend, COT, Valuation, Seasonality):         │
-│      ≥3 for normal, ≥4 for counter-trend / counter-roadmap            │
-│  (3) Class-conditional retailer veto:                                 │
-│      PMs: hard veto if retailers same side                            │
+│  (2) Trend vocabulary normalised (Phase 7 fix — was silently ignored):│
+│      uptrend → bullish · downtrend → bearish · sideways → neutral     │
+│  (3) Asset-class branch (Phase 7):                                    │
+│      asset_class == 'equities' (individual stocks):                   │
+│        - No CFTC COT data → COT vote unavailable                      │
+│        - Valuation-driven path: long when Val=bullish AND             │
+│          trend != downtrend; NEVER short individual stocks            │
+│          (Bernd shorts indices via futures, not single names)         │
+│  (4) Standard 3/5 vote (Location, Trend, COT, Valuation, Seasonality):│
+│      ≥3 same direction with 0 opposing → that direction               │
+│      OR majority dominance: ≥3 same outweighs opposing                │
+│  (5) Soft path (Phase 7) — Valuation-driven thesis:                   │
+│      Val=bullish + ≥2 bullish + 0 bearish → bullish (mild)            │
+│      Val=bearish + ≥2 bearish + 0 bullish → bearish (mild)            │
+│      Catches Bernd's monthly-roadmap reasoning where Valuation is the │
+│      dominant signal but only 2/5 fundamentals fire                   │
+│  (6) TREND SAFETY GATE (Phase 7 prop-firm protection):                │
+│      candidate=bearish AND trend=uptrend → require ≥4 bearish + 0     │
+│        bullish, otherwise return 'hold'                               │
+│      candidate=bullish AND trend=downtrend → require ≥4 bullish + 0   │
+│        bearish, otherwise return 'hold'                               │
+│      Reason: fighting the prevailing trend is the fastest way to blow │
+│      a $5k daily-loss limit. Counter-trend setups need extreme        │
+│      conviction.                                                      │
+│  (7) Class-conditional retailer veto:                                 │
+│      PMs: hard veto if retailers same side as proposed trade          │
 │      others: reduce size 25-50%                                       │
 └──────────────┬──────────────────────────────────────────────────────────┘
                ▼
@@ -221,10 +262,16 @@ This section documents every gate the system passes through, with citations to t
 │  (e) Rank by composite, take BEST zone                                 │
 └──────────────┬──────────────────────────────────────────────────────────┘
                ▼
-┌─── DECISION MATRIX (HARD REJECTS) ────────────────────────────────────┐
-│  Zone direction must MATCH bias consensus                              │
-│  demand@expensive → NO ACTION; supply@cheap → NO ACTION                │
-│  equilibrium + sideways trend → NO ACTION                              │
+┌─── DECISION MATRIX (Phase 7 — softened from hard-reject) ─────────────┐
+│  Zone direction must MATCH bias consensus (still hard)                 │
+│  demand@expensive:                                                     │
+│    if Valuation=bullish → ALLOW as anticipatory reversal               │
+│      (reduced 0.5% risk; trade_context='counter_trend')                │
+│    else → NO ACTION (Val doesn't support the counter-trend thesis)     │
+│  supply@cheap:                                                         │
+│    if Valuation=bearish → ALLOW as anticipatory reversal               │
+│    else → NO ACTION                                                    │
+│  equilibrium + sideways trend → NO ACTION (genuinely no edge)          │
 │  (Phase 6 P2: equilibrium permits LTF level-to-level swing trades      │
 │   with reduced size + T2 cap)                                          │
 └──────────────┬──────────────────────────────────────────────────────────┘

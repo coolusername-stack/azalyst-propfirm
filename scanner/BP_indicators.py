@@ -478,9 +478,22 @@ class Valuation:
         return results
 
     def _rescale(self, series: pd.Series, length: int) -> pd.Series:
-        """Rescale values to -100/+100 range."""
-        rolling_min = series.rolling(window=length, min_periods=max(length//2, 1)).min()
-        rolling_max = series.rolling(window=length, min_periods=max(length//2, 1)).max()
+        """Rescale values to -100/+100 range using a rolling min/max window.
+
+        Adaptive `min_periods`: textbook uses length=100 (Pine Script default),
+        but on a monthly chart with ~10 years of history that's only 120 bars
+        and `min_periods=length/2=50` leaves the first 50 rows blank. For
+        shorter series we relax min_periods to length/4 so the rescale
+        starts producing values earlier without distorting the recent
+        readings. On weekly/daily charts with hundreds of bars, the effect
+        on the latest value is negligible.
+        """
+        n = series.notna().sum()
+        # On short series, relax min_periods so we get readings instead of NaN.
+        # length // 4 keeps the rescale meaningful (≥25% of window populated).
+        min_p = max(length // 4, max(1, n // 4)) if n < length else max(length // 2, 1)
+        rolling_min = series.rolling(window=length, min_periods=min_p).min()
+        rolling_max = series.rolling(window=length, min_periods=min_p).max()
 
         denom = rolling_max - rolling_min
         scaled = np.where(
@@ -490,21 +503,87 @@ class Valuation:
         )
         return pd.Series(scaled, index=series.index)
 
-    def get_bias(self, valuation_df: pd.DataFrame) -> str:
-        """Determine valuation bias from latest data."""
+    def get_bias(self, valuation_df: pd.DataFrame, return_strength: bool = False):
+        """Determine valuation bias by reading each REFERENCE LINE individually.
+
+        This mirrors the Pine Script `Valuation` indicator (CampusValuationTool):
+        the indicator plots 3 separate lines (one per reference symbol) and
+        the trader visually reads each one against the +/- 75 threshold.
+        Bernd does NOT average the lines; he says things like "DXY line is
+        undervalued, bond line is undervalued, gold line is undervalued =
+        all 3 agree, strong bullish bias".
+
+        Bias decision per line:
+          line >= +75  -> bearish (extreme overvalued)
+          line >= +10  -> mild bearish
+          line <= -10  -> mild bullish
+          line <= -75  -> bullish (extreme undervalued)
+          else         -> neutral (within +/- 10 of mean)
+
+        Aggregate across the lines:
+          - All available lines agree (ignoring near-mean): that direction.
+            STRONG when any line is in extreme territory; MILD otherwise.
+          - Majority (>=2 of 3) agree with no opposing extreme: that direction (mild).
+          - Mixed -> neutral.
+
+        Returns 'bullish' / 'bearish' / 'neutral' (or tuple with strength).
+        """
+        empty_result = ('neutral', 'none') if return_strength else 'neutral'
         if valuation_df.empty:
-            return 'neutral'
+            return empty_result
 
         latest = valuation_df.iloc[-1]
-        composite = latest.get('valuation_composite', 0)
+        line_cols = [
+            c for c in valuation_df.columns
+            if c.startswith('valuation_') and c != 'valuation_composite'
+        ]
+        if not line_cols:
+            return empty_result
 
-        if pd.isna(composite):
-            return 'neutral'
-        if composite >= self.overvalued:
-            return 'bearish'
-        elif composite <= self.undervalued:
-            return 'bullish'
-        return 'neutral'
+        votes = []  # list of (direction, strength_tier) per available line
+        for col in line_cols:
+            v = latest.get(col)
+            if pd.isna(v):
+                continue
+            v = float(v)
+            if v >= self.overvalued:
+                votes.append(('bearish', 'extreme'))
+            elif v >= 10.0:
+                votes.append(('bearish', 'mild'))
+            elif v <= self.undervalued:
+                votes.append(('bullish', 'extreme'))
+            elif v <= -10.0:
+                votes.append(('bullish', 'mild'))
+            else:
+                votes.append(('neutral', 'flat'))
+
+        if not votes:
+            return empty_result
+
+        bull = sum(1 for d, _ in votes if d == 'bullish')
+        bear = sum(1 for d, _ in votes if d == 'bearish')
+        n = len(votes)
+
+        any_extreme_bull = any(s == 'extreme' for d, s in votes if d == 'bullish')
+        any_extreme_bear = any(s == 'extreme' for d, s in votes if d == 'bearish')
+
+        # All available lines agree (no opposing direction)
+        if bull == n and n >= 1:
+            strength = 'strong' if any_extreme_bull else 'mild'
+            return ('bullish', strength) if return_strength else 'bullish'
+        if bear == n and n >= 1:
+            strength = 'strong' if any_extreme_bear else 'mild'
+            return ('bearish', strength) if return_strength else 'bearish'
+
+        # Majority (>=2 of 3) agree, with no opposing line
+        if bull >= 2 and bear == 0:
+            strength = 'strong' if any_extreme_bull else 'mild'
+            return ('bullish', strength) if return_strength else 'bullish'
+        if bear >= 2 and bull == 0:
+            strength = 'strong' if any_extreme_bear else 'mild'
+            return ('bearish', strength) if return_strength else 'bearish'
+
+        return empty_result
 
 
 class Seasonality:
